@@ -43,8 +43,8 @@ We chose the PWA approach over a native mobile app for several strategic reasons
 - Points, quest statuses, and reward claims are synced instantly between both partners' devices using Firestore's real-time listeners.
 
 ## 5. Development Roadmap
-- [ ] **Phase 1:** Initialize the Next.js project, install Tailwind CSS, and configure Next.js metadata (Manifest/Icons) for PWA installation.
-- [ ] **Phase 2:** Set up the Firebase project, design the Firestore database schema, and integrate Authentication.
+- [x] **Phase 1:** Initialize the Next.js project, install Tailwind CSS, and configure Next.js metadata (Manifest/Icons) for PWA installation.
+- [x] **Phase 2:** Set up the Firebase project, design the Firestore database schema, and integrate Authentication.
 - [ ] **Phase 3:** Build the core UI screens: Home (Quests), Store (Rewards), and Profile.
 - [ ] **Phase 4:** Write the Custom Service Worker (`firebase-messaging-sw.js`), implement real-time data syncing, and integrate FCM Push Notifications.
 - [ ] **Phase 5:** Conduct internal testing on actual mobile devices, fix UI/UX bugs, and deploy the official build to Vercel.
