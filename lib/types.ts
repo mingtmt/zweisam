@@ -14,6 +14,7 @@ export type QuestSchedule = "daily" | "weekly" | "special";
 export type QuestStatus = "pending" | "active" | "completed";
 
 export interface Quest {
+  id?: string;
   userId: string;
   title: string;
   description: string;
@@ -28,6 +29,7 @@ export interface Quest {
 export type RewardStatus = "available" | "claimed" | "fulfilled";
 
 export interface Reward {
+  id?: string;
   userId: string;
   title: string;
   description: string;
