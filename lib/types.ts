@@ -23,6 +23,8 @@ export interface Quest {
   points: number;
   createdBy: string;
   active: boolean;
+  icon?: string;
+  scheduledAt?: string;
   createdAt: Timestamp;
 }
 

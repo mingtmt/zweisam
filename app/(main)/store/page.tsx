@@ -7,7 +7,7 @@ import { useAuth } from "@/lib/auth-context";
 import type { Reward } from "@/lib/types";
 
 export default function StorePage() {
-  const { userDoc, setUserDoc } = useAuth();
+  const { firebaseUser, userDoc, setUserDoc } = useAuth();
   const [rewards, setRewards] = useState<Reward[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -42,7 +42,7 @@ export default function StorePage() {
     try {
       setClaiming(rewardId);
       await runTransaction(db, async (tx) => {
-        const uRef = doc(db, "users", userDoc.email);
+        const uRef = doc(db, "users", firebaseUser!.uid);
         const rRef = doc(db, "rewards", rewardId);
         const uSnap = await tx.get(uRef);
         const rSnap = await tx.get(rRef);
