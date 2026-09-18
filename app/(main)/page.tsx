@@ -1,7 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { collection, getDocs, query, where, doc, runTransaction } from "firebase/firestore";
+import {
+  collection,
+  getDocs,
+  query,
+  where,
+  doc,
+  runTransaction,
+  serverTimestamp,
+} from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
 import Avatar from "@/components/Avatar";
@@ -17,6 +25,38 @@ const SCHEDULE_ORDER: Record<QuestSchedule, number> = {
   special: 2,
 };
 
+function completedMs(quest: Quest): number | null {
+  const c: unknown = quest.completedAt;
+  if (c instanceof Date) return c.getTime();
+  if (c && typeof c === "object" && "toMillis" in c)
+    return (c as { toMillis(): number }).toMillis();
+  return null;
+}
+
+function resetMs(quest: Quest): number | null {
+  if (quest.schedule !== "daily" && quest.schedule !== "weekly") return null;
+  const at = completedMs(quest);
+  if (at === null) return null;
+  const d = new Date(at);
+  d.setHours(24, 0, 0, 0);
+  if (quest.schedule === "weekly") {
+    while (d.getDay() !== 1) d.setTime(d.getTime() + 86_400_000);
+  }
+  return d.getTime();
+}
+
+function effectiveStatus(quest: Quest, now: number): QuestStatus {
+  const reset = resetMs(quest);
+  if (quest.status === "completed" && reset !== null && now >= reset)
+    return "active";
+  return quest.status;
+}
+
+function isExpiredForReset(quest: Quest, now: number): boolean {
+  const reset = resetMs(quest);
+  return quest.status === "completed" && reset !== null && now >= reset;
+}
+
 export default function HomePage() {
   const { firebaseUser, userDoc, setUserDoc } = useAuth();
   const [quests, setQuests] = useState<Quest[]>([]);
@@ -25,6 +65,12 @@ export default function HomePage() {
   const [completing, setCompleting] = useState<string | null>(null);
   const [showNewQuest, setShowNewQuest] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("created");
+  const [nowMs, setNowMs] = useState(0);
+
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     async function load() {
@@ -40,6 +86,7 @@ export default function HomePage() {
       } catch {
         setError("Failed to load quests. Please try again.");
       } finally {
+        setNowMs(Date.now());
         setLoading(false);
       }
     }
@@ -50,7 +97,7 @@ export default function HomePage() {
     if (completing || !userDoc || !firebaseUser || !quest.id) return;
 
     const questId = quest.id;
-    const isCompleted = quest.status === "completed";
+    const unchecking = effectiveStatus(quest, nowMs) === "completed";
 
     try {
       setCompleting(questId);
@@ -62,15 +109,18 @@ export default function HomePage() {
         if (!qSnap.exists() || !uSnap.exists()) throw new Error("Document not found");
         const data = qSnap.data() as Quest;
 
-        if (isCompleted) {
+        if (unchecking) {
           if (data.status !== "completed")
             throw new Error("Quest was already reopened");
           tx.update(qRef, { status: "active" });
           tx.update(uRef, { points: uSnap.data().points - data.points });
         } else {
-          if (data.status === "completed")
+          if (data.status === "completed" && !isExpiredForReset(data, nowMs))
             throw new Error("Already completed");
-          tx.update(qRef, { status: "completed" });
+          tx.update(qRef, {
+            status: "completed",
+            completedAt: serverTimestamp(),
+          });
           tx.update(uRef, { points: uSnap.data().points + data.points });
         }
       });
@@ -80,7 +130,8 @@ export default function HomePage() {
           q.id === questId
             ? {
                 ...q,
-                status: (isCompleted ? "active" : "completed") as QuestStatus,
+                status: (unchecking ? "active" : "completed") as QuestStatus,
+                completedAt: unchecking ? undefined : new Date(),
               }
             : q
         )
@@ -89,7 +140,7 @@ export default function HomePage() {
         prev
           ? {
               ...prev,
-              points: prev.points + (isCompleted ? -quest.points : quest.points),
+              points: prev.points + (unchecking ? -quest.points : quest.points),
             }
           : prev
       );
@@ -133,12 +184,17 @@ export default function HomePage() {
       }
     };
 
-    const active = quests.filter((q) => q.status !== "completed");
-    const done = quests.filter((q) => q.status === "completed");
+    const active: Quest[] = [];
+    const done: Quest[] = [];
+    for (const raw of quests) {
+      const q = { ...raw, status: effectiveStatus(raw, nowMs) } as Quest;
+      if (q.status === "completed") done.push(q);
+      else active.push(q);
+    }
     sortQuests(active, sortKey);
     sortQuests(done, sortKey);
     return { activeQuests: active, completedQuests: done };
-  }, [quests, sortKey]);
+  }, [quests, sortKey, nowMs]);
 
   if (loading) {
     return (

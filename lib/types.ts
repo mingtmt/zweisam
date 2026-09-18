@@ -25,10 +25,9 @@ export interface Quest {
   active: boolean;
   icon?: string;
   scheduledAt?: string;
+  completedAt?: Timestamp | Date;
   createdAt: Timestamp;
 }
-
-export type RewardStatus = "available" | "claimed" | "fulfilled";
 
 export interface Reward {
   id?: string;
@@ -36,7 +35,6 @@ export interface Reward {
   title: string;
   description: string;
   pointCost: number;
-  status: RewardStatus;
   createdBy: string;
   createdAt: Timestamp;
 }
