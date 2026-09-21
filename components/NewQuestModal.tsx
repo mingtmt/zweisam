@@ -8,6 +8,9 @@ import type { Quest, QuestSchedule } from "@/lib/types";
 
 interface NewQuestModalProps {
   creatorUid: string;
+  creatorName: string;
+  partnerId?: string;
+  partnerName?: string;
   onCreated: (quest: Quest) => void;
   onClose: () => void;
 }
@@ -78,6 +81,9 @@ const SAMPLE_QUESTS: SampleQuest[] = [
 
 export default function NewQuestModal({
   creatorUid,
+  creatorName,
+  partnerId,
+  partnerName,
   onCreated,
   onClose,
 }: NewQuestModalProps) {
@@ -86,9 +92,18 @@ export default function NewQuestModal({
   const [icon, setIcon] = useState<string>(QUEST_ICONS[0]);
   const [points, setPoints] = useState(10);
   const [schedule, setSchedule] = useState<QuestSchedule>("daily");
+  const [target, setTarget] = useState<string>("both");
   const [scheduledAt, setScheduledAt] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  const targetOptions = [
+    { value: "both" as const, label: "Both" },
+    { value: creatorUid, label: creatorName || "Me" },
+    ...(partnerId
+      ? [{ value: partnerId, label: partnerName || "Partner" }]
+      : []),
+  ];
 
   async function handleCreate() {
     const trimmedTitle = title.trim();
@@ -119,10 +134,10 @@ export default function NewQuestModal({
         createdBy: creatorUid,
         userId: creatorUid,
         active: true,
-        scheduledAt:
-          schedule === "special" && scheduledAt
-            ? new Date(scheduledAt).toISOString()
-            : undefined,
+        target,
+        ...(schedule === "special" && scheduledAt
+          ? { scheduledAt: new Date(scheduledAt).toISOString() }
+          : {}),
         createdAt: serverTimestamp(),
       };
       await setDoc(ref, quest);
@@ -253,6 +268,26 @@ export default function NewQuestModal({
               <option value="weekly">Weekly</option>
               <option value="special">Special</option>
             </select>
+          </div>
+        </div>
+
+        <div className="mb-3">
+          <span className={labelClass}>Who is this for?</span>
+          <div className="flex gap-2">
+            {targetOptions.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => setTarget(option.value)}
+                className={`flex-1 rounded-lg border py-2 text-xs font-semibold transition-colors ${
+                  target === option.value
+                    ? "border-rose-400 bg-rose-50 text-rose-700 dark:border-rose-500 dark:bg-rose-950/30 dark:text-rose-300"
+                    : "border-zinc-200 bg-zinc-50 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700/60"
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
           </div>
         </div>
 

@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "seed": "node --experimental-strip-types --env-file=.env.local scripts/seed.ts"
+    "seed": "node --experimental-strip-types --env-file=.env.local scripts/seed.ts",
+    "migrate:nickname": "node --experimental-strip-types --env-file=.env.local scripts/migrate-nickname.ts"
   },
   "dependencies": {
     "firebase": "^12.19.0",

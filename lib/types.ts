@@ -5,6 +5,7 @@ export interface User {
   email: string;
   photoURL: string;
   partnerId: string | null;
+  nickname?: string;
   inviteCode: string;
   points: number;
   createdAt: Timestamp;
@@ -23,6 +24,9 @@ export interface Quest {
   points: number;
   createdBy: string;
   active: boolean;
+  target?: string;
+  completedBy?: string;
+  completions?: Record<string, Timestamp>;
   icon?: string;
   scheduledAt?: string;
   completedAt?: Timestamp | Date;

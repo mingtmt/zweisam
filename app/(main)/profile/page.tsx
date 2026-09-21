@@ -9,11 +9,15 @@ import {
   where,
   runTransaction,
   doc,
+  getDoc,
+  updateDoc,
+  deleteField,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
 import Avatar from "@/components/Avatar";
 import { logOut } from "@/lib/auth";
+import type { User } from "@/lib/types";
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -23,10 +27,45 @@ export default function ProfilePage() {
   const [pairing, setPairing] = useState(false);
   const [pairError, setPairError] = useState("");
   const [disconnecting, setDisconnecting] = useState(false);
+  const [partner, setPartner] = useState<User | null>(null);
+  const [partnerError, setPartnerError] = useState("");
+  const [nicknameEditing, setNicknameEditing] = useState(false);
+  const [nicknameDraft, setNicknameDraft] = useState("");
+  const [ownNicknameEditing, setOwnNicknameEditing] = useState(false);
+  const [ownNicknameDraft, setOwnNicknameDraft] = useState("");
+  const [savingNickname, setSavingNickname] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !firebaseUser) router.replace("/login");
   }, [authLoading, firebaseUser, router]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadPartner() {
+      if (!userDoc?.partnerId) {
+        setPartner(null);
+        setPartnerError("");
+        return;
+      }
+      setPartnerError("");
+      try {
+        const snap = await getDoc(doc(db, "users", userDoc.partnerId));
+        if (!snap.exists()) {
+          if (!cancelled) setPartnerError("Partner not found.");
+          return;
+        }
+        if (!cancelled) setPartner({ ...snap.data(), id: snap.id } as unknown as User);
+      } catch {
+        if (!cancelled) setPartnerError("Failed to load partner profile.");
+      }
+    }
+
+    loadPartner();
+    return () => {
+      cancelled = true;
+    };
+  }, [userDoc?.partnerId]);
 
   const handleLogout = async () => {
     await logOut();
@@ -92,6 +131,50 @@ export default function ProfilePage() {
     }
   };
 
+  const savePartnerNickname = async () => {
+    if (!firebaseUser || !userDoc?.partnerId) return;
+
+    const trimmed = nicknameDraft.trim();
+    setPairError("");
+    setSavingNickname(true);
+
+    try {
+      await updateDoc(doc(db, "users", userDoc.partnerId), {
+        nickname: trimmed ? trimmed : deleteField(),
+      });
+      setPartner((prev) =>
+        prev ? { ...prev, nickname: trimmed || undefined } : prev
+      );
+      setNicknameEditing(false);
+    } catch {
+      setPairError("Failed to save nickname. Please try again.");
+    } finally {
+      setSavingNickname(false);
+    }
+  };
+
+  const saveOwnNickname = async () => {
+    if (!firebaseUser) return;
+
+    const trimmed = ownNicknameDraft.trim();
+    setPairError("");
+    setSavingNickname(true);
+
+    try {
+      await updateDoc(doc(db, "users", firebaseUser.uid), {
+        nickname: trimmed ? trimmed : deleteField(),
+      });
+      setUserDoc((prev) =>
+        prev ? { ...prev, nickname: trimmed || undefined } : prev
+      );
+      setOwnNicknameEditing(false);
+    } catch {
+      setPairError("Failed to save nickname. Please try again.");
+    } finally {
+      setSavingNickname(false);
+    }
+  };
+
   const disconnectFromPartner = async () => {
     if (!userDoc || !firebaseUser) return;
     if (!userDoc.partnerId) return;
@@ -131,12 +214,47 @@ export default function ProfilePage() {
       <div className="mb-5 flex flex-col items-center gap-4 rounded-2xl border border-zinc-100 bg-white px-6 py-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
         <Avatar
           src={userDoc.photoURL}
-          name={userDoc.displayName}
+          name={userDoc.nickname || userDoc.displayName}
           className="h-16 w-16 rounded-full"
         />
         <div className="text-center">
-          <h2 className="text-lg font-semibold">{userDoc.displayName}</h2>
+          <div className="flex items-center justify-center gap-2">
+            <h2 className="text-lg font-semibold">
+              {userDoc.nickname || userDoc.displayName}
+            </h2>
+            <button
+              onClick={() => {
+                setOwnNicknameDraft(userDoc.nickname || userDoc.displayName);
+                setOwnNicknameEditing((v) => !v);
+              }}
+              className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/20"
+            >
+              {ownNicknameEditing ? "Cancel" : "Nickname"}
+            </button>
+          </div>
           <p className="text-xs text-zinc-500 dark:text-zinc-400">{userDoc.email}</p>
+          {ownNicknameEditing && (
+            <div className="mt-3 flex gap-2">
+              <input
+                type="text"
+                value={ownNicknameDraft}
+                onChange={(e) => setOwnNicknameDraft(e.target.value)}
+                placeholder="Your nickname"
+                maxLength={30}
+                className="flex-1 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm outline-none transition-colors focus:border-rose-400 focus:ring-1 focus:ring-rose-400 dark:border-zinc-700 dark:bg-zinc-800 dark:focus:border-rose-500"
+              />
+              <button
+                onClick={saveOwnNickname}
+                disabled={savingNickname}
+                className="rounded-lg bg-rose-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-rose-700 active:bg-rose-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {savingNickname ? "..." : "Save"}
+              </button>
+            </div>
+          )}
+          <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">
+            Your partner can also set this nickname.
+          </p>
         </div>
       </div>
 
@@ -155,6 +273,81 @@ export default function ProfilePage() {
         </h3>
         {userDoc.partnerId ? (
           <div className="flex flex-col gap-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+              Your Partner
+            </h3>
+
+            {partner ? (
+              <>
+                <div className="flex items-center gap-3 rounded-xl bg-zinc-50 p-3 dark:bg-zinc-800/40">
+                  <Avatar
+                    src={partner.photoURL}
+                    name={partner.nickname || partner.displayName}
+                    className="h-12 w-12 rounded-full"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <h4 className="truncate text-sm font-semibold">
+                        {partner.nickname || partner.displayName}
+                      </h4>
+                      <button
+                        onClick={() => {
+                          setNicknameDraft(partner.nickname || partner.displayName);
+                          setNicknameEditing((v) => !v);
+                        }}
+                        className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/20"
+                      >
+                        {nicknameEditing ? "Cancel" : "Nickname"}
+                      </button>
+                    </div>
+                    <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">
+                      {partner.email}
+                    </p>
+                    <p className="mt-0.5 text-xs font-semibold text-rose-600 dark:text-rose-400">
+                      {partner.points} pts
+                    </p>
+                  </div>
+                </div>
+
+                <p className="text-xs text-zinc-400 dark:text-zinc-500">
+                  The nickname is stored on your partner&apos;s profile and shown to
+                  both of you. They can change it too.
+                </p>
+
+                {userDoc.nickname && (
+                  <p className="text-xs italic text-zinc-500 dark:text-zinc-400">
+                    They call you “{userDoc.nickname}”
+                  </p>
+                )}
+
+                {nicknameEditing && (
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={nicknameDraft}
+                      onChange={(e) => setNicknameDraft(e.target.value)}
+                      placeholder="Their nickname"
+                      maxLength={30}
+                      className="flex-1 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm outline-none transition-colors focus:border-rose-400 focus:ring-1 focus:ring-rose-400 dark:border-zinc-700 dark:bg-zinc-800 dark:focus:border-rose-500"
+                    />
+                    <button
+                      onClick={savePartnerNickname}
+                      disabled={savingNickname}
+                      className="rounded-lg bg-rose-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-rose-700 active:bg-rose-800 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {savingNickname ? "..." : "Save"}
+                    </button>
+                  </div>
+                )}
+              </>
+            ) : partnerError ? (
+              <p className="text-xs text-red-500">{partnerError}</p>
+            ) : (
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                Loading partner...
+              </p>
+            )}
+
             <p className="text-sm text-green-600 dark:text-green-400">
               Paired with partner ✓
             </p>

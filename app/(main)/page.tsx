@@ -7,15 +7,20 @@ import {
   query,
   where,
   doc,
+  getDoc,
   runTransaction,
   serverTimestamp,
+  deleteField,
+  deleteDoc,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
 import Avatar from "@/components/Avatar";
 import NewQuestModal from "@/components/NewQuestModal";
 import QuestCard from "@/components/QuestCard";
-import type { Quest, QuestSchedule, QuestStatus } from "@/lib/types";
+import ConfirmModal from "@/components/ConfirmModal";
+import type { Quest, QuestSchedule, QuestStatus, User } from "@/lib/types";
+import type { Timestamp } from "firebase/firestore";
 
 type SortKey = "created" | "points" | "title" | "schedule";
 
@@ -25,19 +30,41 @@ const SCHEDULE_ORDER: Record<QuestSchedule, number> = {
   special: 2,
 };
 
-function completedMs(quest: Quest): number | null {
-  const c: unknown = quest.completedAt;
-  if (c instanceof Date) return c.getTime();
-  if (c && typeof c === "object" && "toMillis" in c)
-    return (c as { toMillis(): number }).toMillis();
+function tsMs(x: unknown): number | null {
+  if (x instanceof Date) return x.getTime();
+  if (x && typeof x === "object" && "toMillis" in x)
+    return (x as { toMillis(): number }).toMillis();
   return null;
 }
 
-function resetMs(quest: Quest): number | null {
+function completionFor(quest: Quest, uid: string | undefined): boolean {
+  if (!uid) return false;
+  if (quest.completions !== undefined) return uid in quest.completions;
+  return quest.completedBy === uid && quest.completedAt != null;
+}
+
+function allCompletedMs(quest: Quest): number[] {
+  const times: number[] = [];
+  if (quest.completions !== undefined) {
+    for (const uid in quest.completions) {
+      const t = tsMs(quest.completions[uid]);
+      if (t !== null) times.push(t);
+    }
+    return times;
+  }
+  if (quest.completedBy) {
+    const t = tsMs(quest.completedAt);
+    if (t !== null) times.push(t);
+  }
+  return times;
+}
+
+function wholeResetMs(quest: Quest): number | null {
   if (quest.schedule !== "daily" && quest.schedule !== "weekly") return null;
-  const at = completedMs(quest);
-  if (at === null) return null;
-  const d = new Date(at);
+  const times = allCompletedMs(quest);
+  if (times.length === 0) return null;
+  const latest = Math.max(...times);
+  const d = new Date(latest);
   d.setHours(24, 0, 0, 0);
   if (quest.schedule === "weekly") {
     while (d.getDay() !== 1) d.setTime(d.getTime() + 86_400_000);
@@ -45,16 +72,69 @@ function resetMs(quest: Quest): number | null {
   return d.getTime();
 }
 
-function effectiveStatus(quest: Quest, now: number): QuestStatus {
-  const reset = resetMs(quest);
-  if (quest.status === "completed" && reset !== null && now >= reset)
-    return "active";
-  return quest.status;
+function isWholeExpired(quest: Quest, now: number): boolean {
+  const reset = wholeResetMs(quest);
+  return reset !== null && now >= reset;
 }
 
-function isExpiredForReset(quest: Quest, now: number): boolean {
-  const reset = resetMs(quest);
-  return quest.status === "completed" && reset !== null && now >= reset;
+// Quest is fully complete when every user it targets has completed it.
+// For target-less ("both") quests that means both partners.
+function questCompleted(
+  quest: Quest,
+  uid: string | undefined,
+  partnerId: string | null | undefined
+): boolean {
+  const target = quest.target ?? "both";
+  if (target === "both")
+    return completionFor(quest, uid) && completionFor(quest, partnerId ?? undefined);
+  let targetUid = target;
+  if (target === "me") targetUid = quest.createdBy;
+  if (target === "partner")
+    targetUid = uid === quest.createdBy ? partnerId ?? "" : uid ?? "";
+  return completionFor(quest, targetUid);
+}
+
+// Whether this quest shows as completed for the given viewer: their own box
+// is ticked, or (for quests they can't tick) the quest is done by its target.
+function viewerDone(
+  quest: Quest,
+  uid: string | undefined,
+  partnerId: string | null | undefined,
+  now: number
+): boolean {
+  if (isWholeExpired(quest, now)) return false;
+  if (uid && isEligible(quest, uid, partnerId))
+    return completionFor(quest, uid);
+  return questCompleted(quest, uid, partnerId);
+}
+
+function isEligible(
+  quest: Quest,
+  uid: string | undefined,
+  partnerId: string | null | undefined
+): boolean {
+  const target = quest.target ?? "both";
+  if (target === "both") return true;
+  if (!uid) return false;
+  if (target === "me") return uid === quest.createdBy;
+  if (target === "partner") return partnerId === quest.createdBy;
+  return uid === target;
+}
+
+function resolveTargetName(
+  quest: Quest,
+  uid: string | undefined,
+  partnerId: string | null | undefined,
+  myName: string | undefined,
+  partnerName: string | undefined
+): string | undefined {
+  const target = quest.target ?? "both";
+  if (target === "both") return undefined;
+  const isMe =
+    target === uid ||
+    (target === "me" && quest.createdBy === uid) ||
+    (target === "partner" && partnerId === quest.createdBy);
+  return isMe ? (myName ?? "you") : (partnerName ?? "your partner");
 }
 
 export default function HomePage() {
@@ -64,13 +144,39 @@ export default function HomePage() {
   const [error, setError] = useState("");
   const [completing, setCompleting] = useState<string | null>(null);
   const [showNewQuest, setShowNewQuest] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Quest | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("created");
   const [nowMs, setNowMs] = useState(0);
+  const [partnerName, setPartnerName] = useState<string | null>(null);
 
   useEffect(() => {
     const id = setInterval(() => setNowMs(Date.now()), 30_000);
     return () => clearInterval(id);
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      if (!userDoc?.partnerId) {
+        setPartnerName(null);
+        return;
+      }
+      try {
+        const snap = await getDoc(doc(db, "users", userDoc.partnerId));
+        if (!cancelled) {
+          const p = snap.exists() ? (snap.data() as User) : null;
+          setPartnerName(p ? p.nickname || p.displayName : null);
+        }
+      } catch {
+        if (!cancelled) setPartnerName(null);
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [userDoc?.partnerId]);
 
   useEffect(() => {
     async function load() {
@@ -95,46 +201,73 @@ export default function HomePage() {
 
   async function toggleQuestStatus(quest: Quest) {
     if (completing || !userDoc || !firebaseUser || !quest.id) return;
+    if (!isEligible(quest, firebaseUser.uid, userDoc.partnerId)) return;
 
     const questId = quest.id;
-    const unchecking = effectiveStatus(quest, nowMs) === "completed";
+    const uid = firebaseUser.uid;
+    const partnerId = userDoc.partnerId;
+    const unchecking = completionFor(quest, uid) && !isWholeExpired(quest, nowMs);
 
     try {
       setCompleting(questId);
-      await runTransaction(db, async (tx) => {
+      const completed = await runTransaction(db, async (tx) => {
         const qRef = doc(db, "quests", questId);
-        const uRef = doc(db, "users", firebaseUser.uid);
+        const uRef = doc(db, "users", uid);
         const qSnap = await tx.get(qRef);
         const uSnap = await tx.get(uRef);
         if (!qSnap.exists() || !uSnap.exists()) throw new Error("Document not found");
         const data = qSnap.data() as Quest;
 
         if (unchecking) {
-          if (data.status !== "completed")
+          if (!completionFor(data, uid) || isWholeExpired(data, nowMs))
             throw new Error("Quest was already reopened");
-          tx.update(qRef, { status: "active" });
-          tx.update(uRef, { points: uSnap.data().points - data.points });
-        } else {
-          if (data.status === "completed" && !isExpiredForReset(data, nowMs))
-            throw new Error("Already completed");
           tx.update(qRef, {
-            status: "completed",
-            completedAt: serverTimestamp(),
+            [`completions.${uid}`]: deleteField(),
+            completedBy: deleteField(),
+            completedAt: deleteField(),
+            status: "pending",
           });
-          tx.update(uRef, { points: uSnap.data().points + data.points });
+          tx.update(uRef, { points: uSnap.data().points - data.points });
+          return false;
         }
+        if (completionFor(data, uid) && !isWholeExpired(data, nowMs))
+          throw new Error("Already completed");
+        const fullyDone =
+          (data.target ?? "both") === "both"
+            ? completionFor(data, partnerId ?? undefined)
+            : true;
+        const completions = { ...(data.completions ?? {}) };
+        if (data.completions === undefined && data.completedBy && data.completedAt) {
+          completions[data.completedBy] = data.completedAt as Timestamp;
+        }
+        completions[uid] = serverTimestamp() as unknown as Timestamp;
+        tx.update(qRef, {
+          completions,
+          status: fullyDone ? "completed" : "pending",
+        });
+        tx.update(uRef, { points: uSnap.data().points + data.points });
+        return fullyDone;
       });
 
       setQuests((prev) =>
-        prev.map((q) =>
-          q.id === questId
-            ? {
-                ...q,
-                status: (unchecking ? "active" : "completed") as QuestStatus,
-                completedAt: unchecking ? undefined : new Date(),
-              }
-            : q
-        )
+        prev.map((q) => {
+          if (q.id !== questId) return q;
+          if (unchecking) {
+            const completions = { ...q.completions };
+            delete completions[uid];
+            return { ...q, completions, status: "pending" };
+          }
+          const completions = { ...(q.completions ?? {}) };
+          if (q.completions === undefined && q.completedBy && q.completedAt) {
+            completions[q.completedBy] = q.completedAt as Timestamp;
+          }
+          completions[uid] = new Date() as unknown as Timestamp;
+          return {
+            ...q,
+            completions,
+            status: completed ? ("completed" as QuestStatus) : "pending",
+          };
+        })
       );
       setUserDoc((prev) =>
         prev
@@ -148,6 +281,22 @@ export default function HomePage() {
       setError("Failed to update quest. Please try again.");
     } finally {
       setCompleting(null);
+    }
+  }
+
+  async function confirmDeleteQuest() {
+    if (!deleteTarget?.id || deleting || deleteTarget.createdBy !== firebaseUser?.uid)
+      return;
+    setDeleting(true);
+    try {
+      await deleteDoc(doc(db, "quests", deleteTarget.id));
+      setQuests((prev) => prev.filter((q) => q.id !== deleteTarget.id));
+      setDeleteTarget(null);
+    } catch {
+      setError("Failed to delete quest. Please try again.");
+      setDeleteTarget(null);
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -187,14 +336,44 @@ export default function HomePage() {
     const active: Quest[] = [];
     const done: Quest[] = [];
     for (const raw of quests) {
-      const q = { ...raw, status: effectiveStatus(raw, nowMs) } as Quest;
+      const q = {
+        ...raw,
+        status: viewerDone(raw, firebaseUser?.uid, userDoc?.partnerId, nowMs)
+          ? "completed"
+          : ("pending" as QuestStatus),
+      };
       if (q.status === "completed") done.push(q);
       else active.push(q);
     }
     sortQuests(active, sortKey);
     sortQuests(done, sortKey);
     return { activeQuests: active, completedQuests: done };
-  }, [quests, sortKey, nowMs]);
+  }, [quests, sortKey, nowMs, firebaseUser?.uid, userDoc?.partnerId]);
+
+  const partnerLabel = partnerName || undefined;
+  const myLabel = userDoc?.nickname || userDoc?.displayName || undefined;
+
+  const cardProps = (quest: Quest) => {
+    const uid = firebaseUser?.uid;
+    const pid = userDoc?.partnerId;
+    const expired = isWholeExpired(quest, nowMs);
+    return {
+      disabled: completing === quest.id || !isEligible(quest, uid, pid),
+      partnerName: partnerLabel,
+      targetName: resolveTargetName(
+        quest,
+        uid,
+        pid,
+        myLabel,
+        partnerLabel
+      ),
+      myDone: uid !== undefined && !expired && completionFor(quest, uid),
+      partnerDone:
+        pid !== undefined && !expired && completionFor(quest, pid ?? undefined),
+      onDelete:
+        quest.createdBy === uid ? () => setDeleteTarget(quest) : undefined,
+    };
+  };
 
   if (loading) {
     return (
@@ -244,7 +423,7 @@ export default function HomePage() {
         <h1 className="text-xl font-semibold">Zweisam</h1>
         <Avatar
           src={userDoc?.photoURL}
-          name={userDoc?.displayName ?? "User"}
+          name={myLabel ?? "User"}
           className="h-8 w-8 rounded-full"
         />
       </header>
@@ -289,7 +468,7 @@ export default function HomePage() {
             <QuestCard
               key={quest.id}
               quest={quest}
-              disabled={completing === quest.id}
+              {...cardProps(quest)}
               onToggle={toggleQuestStatus}
             />
           ))}
@@ -306,7 +485,7 @@ export default function HomePage() {
               <QuestCard
                 key={quest.id}
                 quest={quest}
-                disabled={completing === quest.id}
+                {...cardProps(quest)}
                 onToggle={toggleQuestStatus}
               />
             ))}
@@ -317,8 +496,22 @@ export default function HomePage() {
       {showNewQuest && firebaseUser && (
         <NewQuestModal
           creatorUid={firebaseUser.uid}
+          creatorName={myLabel ?? "Me"}
+          partnerId={userDoc?.partnerId ?? undefined}
+          partnerName={partnerLabel}
           onCreated={handleNewQuestCreated}
           onClose={() => setShowNewQuest(false)}
+        />
+      )}
+
+      {deleteTarget && (
+        <ConfirmModal
+          title="Delete Quest"
+          message={`Delete "${deleteTarget.title}"? This cannot be undone.`}
+          confirmLabel="Delete"
+          danger
+          onConfirm={confirmDeleteQuest}
+          onClose={() => setDeleteTarget(null)}
         />
       )}
     </main>
