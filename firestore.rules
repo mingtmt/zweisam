@@ -1,0 +1,47 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // users: invite-code lookup requires querying the collection, so any
+    // signed-in user can read. Own doc is fully controlled by its owner.
+    // A partner may only change partnerId (pair/unpair) or nickname.
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth.uid == userId;
+      allow update: if request.auth != null && (
+        request.auth.uid == userId
+        || (
+          resource.data.partnerId == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['partnerId', 'nickname'])
+        )
+        || (
+          resource.data.partnerId == null
+          && request.resource.data.partnerId == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['partnerId'])
+        )
+      );
+    }
+
+    // quests: shared list for the couple. Creators manage their own quests;
+    // completion updates may only touch status/completion fields.
+    match /quests/{questId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth.uid == request.resource.data.createdBy;
+      allow update: if request.auth != null
+        && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['completions', 'status', 'completedBy', 'completedAt']);
+      allow delete: if request.auth.uid == resource.data.createdBy;
+    }
+
+    // rewards: shared store. Creators add rewards; any signed-in user may
+    // claim (delete) one, matching the store's claim flow.
+    match /rewards/{rewardId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth.uid == request.resource.data.createdBy;
+      allow delete: if request.auth != null;
+    }
+  }
+}
