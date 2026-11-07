@@ -34,7 +34,7 @@ function remainingOf(r: Reward) {
 export default function StorePage() {
   const { t, formatDateTime } = useI18n();
   const toast = useToast();
-  const { firebaseUser, userDoc, partnerDoc, coupleId } = useAuth();
+  const { firebaseUser, userDoc, coupleId, myName, partnerName } = useAuth();
   const rewardsQ = useCoupleCollection<Reward>(coupleId, "rewards");
   const claimsQ = useCoupleCollection<Claim>(coupleId, "claims");
   const [tab, setTab] = useState<Tab>("forMe");
@@ -44,8 +44,8 @@ export default function StorePage() {
 
   const uid = firebaseUser?.uid;
   const points = userDoc?.points ?? 0;
-  const myLabel = userDoc?.nickname || userDoc?.displayName || t("common.you");
-  const partnerLabel = partnerDoc?.nickname || partnerDoc?.displayName || t("common.partner");
+  const myLabel = myName || t("common.you");
+  const partnerLabel = partnerName || t("common.partner");
 
   const { forMe, mine } = useMemo(() => {
     const soldOut = (r: Reward) => (remainingOf(r) === 0 ? 1 : 0);

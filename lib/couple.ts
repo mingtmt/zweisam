@@ -1,5 +1,6 @@
 import {
   collection,
+  deleteField,
   doc,
   runTransaction,
   serverTimestamp,
@@ -59,4 +60,35 @@ export async function ensureCouple(db: Firestore, uid: string, partnerId: string
     }
   });
   return coupleId;
+}
+
+/**
+ * One-time move of legacy per-user `nickname` fields into the couple doc.
+ * Runs only while the couple has no `nicknames` map yet.
+ */
+export async function adoptLegacyNicknames(
+  db: Firestore,
+  coupleId: string,
+  uid: string,
+  partnerId: string
+) {
+  await runTransaction(db, async (tx) => {
+    const coupleRef = doc(db, "couples", coupleId);
+    const meRef = doc(db, "users", uid);
+    const partnerRef = doc(db, "users", partnerId);
+    const [coupleSnap, meSnap, partnerSnap] = await Promise.all([
+      tx.get(coupleRef),
+      tx.get(meRef),
+      tx.get(partnerRef),
+    ]);
+    if (!coupleSnap.exists() || coupleSnap.data().nicknames !== undefined) return;
+    const nicknames: Record<string, string> = {};
+    const mine = meSnap.data()?.nickname;
+    const theirs = partnerSnap.data()?.nickname;
+    if (typeof mine === "string" && mine.trim()) nicknames[uid] = mine.trim();
+    if (typeof theirs === "string" && theirs.trim()) nicknames[partnerId] = theirs.trim();
+    tx.update(coupleRef, { nicknames });
+    if (mine !== undefined) tx.update(meRef, { nickname: deleteField() });
+    if (theirs !== undefined) tx.update(partnerRef, { nickname: deleteField() });
+  });
 }

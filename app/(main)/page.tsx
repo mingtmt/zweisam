@@ -50,7 +50,7 @@ function sortQuests(list: Quest[], key: SortKey) {
 export default function HomePage() {
   const { t } = useI18n();
   const toast = useToast();
-  const { firebaseUser, userDoc, partnerDoc, coupleId } = useAuth();
+  const { firebaseUser, userDoc, partnerDoc, coupleId, myName, partnerName } = useAuth();
   const { items: quests, loading, error } = useCoupleCollection<Quest>(coupleId, "quests");
   const [completing, setCompleting] = useState<string | null>(null);
   const [form, setForm] = useState<{ quest?: Quest } | null>(null);
@@ -67,12 +67,12 @@ export default function HomePage() {
 
   const uid = firebaseUser?.uid;
   const partnerId = userDoc?.partnerId ?? null;
-  const myLabel = userDoc?.nickname || userDoc?.displayName || t("common.you");
-  const partnerLabel = partnerDoc?.nickname || partnerDoc?.displayName || t("common.partner");
+  const myLabel = myName || t("common.you");
+  const partnerLabel = partnerName || t("common.partner");
 
   async function toggleQuestStatus(quest: Quest) {
     if (completing || !uid || !coupleId || !quest.id) return;
-    if (!isEligible(quest, uid, partnerId)) return;
+    if (!isEligible(quest, uid, partnerId) || isOverdue(quest, uid, partnerId, Date.now())) return;
     const questId = quest.id;
     setCompleting(questId);
     try {
@@ -126,7 +126,9 @@ export default function HomePage() {
         key={quest.id}
         quest={quest}
         onToggle={toggleQuestStatus}
-        disabled={completing === quest.id || !isEligible(quest, uid, partnerId)}
+        disabled={
+          completing === quest.id || !isEligible(quest, uid, partnerId) || isOverdue(quest, uid, partnerId, nowMs)
+        }
         partnerName={partnerLabel}
         targetName={forViewer === null ? undefined : forViewer ? myLabel : partnerLabel}
         myDone={!expired && completionFor(quest, uid)}
@@ -203,18 +205,32 @@ export default function HomePage() {
         <label className="sr-only" htmlFor="quest-sort">
           {t("home.sortLabel")}
         </label>
-        <select
-          id="quest-sort"
-          value={sortKey}
-          onChange={(e) => setSortKey(e.target.value as SortKey)}
-          className="min-h-11 rounded-2xl border border-line bg-card px-3 text-sm font-bold text-muted outline-none focus:border-accent"
-        >
-          {SORT_KEYS.map((k) => (
-            <option key={k} value={k}>
-              {t(`home.sort.${k}`)}
-            </option>
-          ))}
-        </select>
+        <div className="relative shrink-0">
+          <select
+            id="quest-sort"
+            value={sortKey}
+            onChange={(e) => setSortKey(e.target.value as SortKey)}
+            className="h-11 appearance-none rounded-2xl border border-line bg-card pl-3.5 pr-9 text-sm font-bold text-muted outline-none focus:border-accent"
+          >
+            {SORT_KEYS.map((k) => (
+              <option key={k} value={k}>
+                {t(`home.sort.${k}`)}
+              </option>
+            ))}
+          </select>
+          <svg
+            viewBox="0 0 24 24"
+            className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2.5}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M6 9l6 6 6-6" />
+          </svg>
+        </div>
       </div>
 
       {error ? (

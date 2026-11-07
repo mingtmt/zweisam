@@ -2,7 +2,7 @@ rules_version = '2';
 
 // Data model
 //   users/{uid}                     profile, points, partnerId, coupleId
-//   couples/{coupleId}              { members: [uidA, uidB] }  (uids sorted, id = "uidA_uidB")
+//   couples/{coupleId}              { members: [uidA, uidB], nicknames: {uid: name} }  (uids sorted, id = "uidA_uidB")
 //   couples/{coupleId}/quests/{id}
 //   couples/{coupleId}/rewards/{id}
 //   couples/{coupleId}/claims/{id}
@@ -82,7 +82,13 @@ service cloud.firestore {
         && getAfter(/databases/$(database)/documents/users/$(request.resource.data.members[1])).data.partnerId
             == request.resource.data.members[0];
 
-      allow update, delete: if false;
+      // Nicknames are per couple: members may set them (keyed by member uid);
+      // disconnecting clears the map.
+      allow update: if isMember(coupleId)
+        && changedOnly(['nicknames'])
+        && request.resource.data.nicknames is map
+        && request.resource.data.nicknames.keys().hasOnly(resource.data.members);
+      allow delete: if false;
 
       // ----------------------------------------------------------- quests
       match /quests/{questId} {

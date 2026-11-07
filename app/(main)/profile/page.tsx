@@ -79,7 +79,7 @@ export default function ProfilePage() {
   const router = useRouter();
   const { t, locale, setLocale } = useI18n();
   const toast = useToast();
-  const { firebaseUser, userDoc, partnerDoc: partner } = useAuth();
+  const { firebaseUser, userDoc, partnerDoc: partner, coupleId, nicknames, myName, partnerName } = useAuth();
   const [copied, setCopied] = useState(false);
   const [inviteCodeInput, setInviteCodeInput] = useState("");
   const [pairing, setPairing] = useState(false);
@@ -90,7 +90,7 @@ export default function ProfilePage() {
 
   if (!userDoc || !firebaseUser) return null;
   const uid = firebaseUser.uid;
-  const myLabel = userDoc.nickname || userDoc.displayName;
+  const myLabel = myName || userDoc.displayName;
 
   const handleLogout = async () => {
     await logOut();
@@ -117,9 +117,13 @@ export default function ProfilePage() {
     }
   };
 
+  // Nicknames belong to the couple, so they vanish when the pair disconnects.
   const saveNickname = (targetUid: string) => async (value: string) => {
+    if (!coupleId) return;
     try {
-      await updateDoc(doc(db, "users", targetUid), { nickname: value ? value : deleteField() });
+      await updateDoc(doc(db, "couples", coupleId), {
+        [`nicknames.${targetUid}`]: value ? value : deleteField(),
+      });
     } catch (e) {
       console.error(e);
       toast(t("profile.err.nickname"), "error");
@@ -154,7 +158,11 @@ export default function ProfilePage() {
         tx.update(meRef, { partnerId, coupleId });
         tx.update(partnerRef, { partnerId: uid, coupleId });
         if (!coupleSnap.exists()) {
-          tx.set(coupleRef, { members: coupleMembers(uid, partnerId), createdAt: serverTimestamp() });
+          tx.set(coupleRef, {
+            members: coupleMembers(uid, partnerId),
+            nicknames: {},
+            createdAt: serverTimestamp(),
+          });
         }
       });
       setInviteCodeInput("");
@@ -172,8 +180,10 @@ export default function ProfilePage() {
     if (!partnerId) return;
     setDisconnecting(true);
     try {
+      const leavingCoupleId = coupleId ?? userDoc.coupleId ?? null;
       await runTransaction(db, async (tx) => {
-        // Couple data is kept so re-pairing restores it.
+        // Quests/rewards are kept so re-pairing restores them; nicknames are not.
+        if (leavingCoupleId) tx.update(doc(db, "couples", leavingCoupleId), { nicknames: {} });
         tx.update(doc(db, "users", uid), { partnerId: null, coupleId: null });
         tx.update(doc(db, "users", partnerId), { partnerId: null, coupleId: null });
       });
@@ -195,13 +205,15 @@ export default function ProfilePage() {
         <Avatar src={userDoc.photoURL} name={myLabel} className="h-20 w-20 rounded-full ring-4 ring-accent-soft" />
         <div className="mt-3 flex items-center gap-1.5">
           <h2 className="text-xl font-extrabold">{myLabel}</h2>
-          <button
-            type="button"
-            onClick={() => setEditing(editing === "own" ? null : "own")}
-            className="rounded-full px-2 py-1 text-xs font-bold text-accent hover:bg-accent-soft"
-          >
-            {editing === "own" ? t("common.cancel") : t("profile.nickname")}
-          </button>
+          {coupleId && (
+            <button
+              type="button"
+              onClick={() => setEditing(editing === "own" ? null : "own")}
+              className="rounded-full px-2 py-1 text-xs font-bold text-accent hover:bg-accent-soft"
+            >
+              {editing === "own" ? t("common.cancel") : t("profile.nickname")}
+            </button>
+          )}
         </div>
         <p className="text-sm text-muted">{userDoc.email}</p>
         {editing === "own" && (
@@ -212,7 +224,7 @@ export default function ProfilePage() {
             onDone={() => setEditing(null)}
           />
         )}
-        <p className="mt-2 text-xs text-muted">{t("profile.nicknameHint")}</p>
+        {coupleId && <p className="mt-2 text-xs text-muted">{t("profile.nicknameHint")}</p>}
         <div className="mt-4 flex items-center gap-2">
           <span className="text-sm font-bold text-muted">{t("profile.points")}</span>
           <PointsPill className="px-3 py-1 text-base">{userDoc.points}</PointsPill>
@@ -228,19 +240,21 @@ export default function ProfilePage() {
                 <div className="flex items-center gap-3 rounded-2xl bg-soft p-3">
                   <Avatar
                     src={partner.photoURL}
-                    name={partner.nickname || partner.displayName}
+                    name={partnerName}
                     className="h-12 w-12 rounded-full"
                   />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
-                      <h4 className="truncate font-extrabold">{partner.nickname || partner.displayName}</h4>
-                      <button
-                        type="button"
-                        onClick={() => setEditing(editing === "partner" ? null : "partner")}
-                        className="shrink-0 rounded-full px-2 py-0.5 text-xs font-bold text-accent hover:bg-accent-soft"
-                      >
-                        {editing === "partner" ? t("common.cancel") : t("profile.nickname")}
-                      </button>
+                      <h4 className="truncate font-extrabold">{partnerName}</h4>
+                      {coupleId && (
+                        <button
+                          type="button"
+                          onClick={() => setEditing(editing === "partner" ? null : "partner")}
+                          className="shrink-0 rounded-full px-2 py-0.5 text-xs font-bold text-accent hover:bg-accent-soft"
+                        >
+                          {editing === "partner" ? t("common.cancel") : t("profile.nickname")}
+                        </button>
+                      )}
                     </div>
                     <p className="truncate text-xs text-muted">{partner.email}</p>
                   </div>
@@ -248,15 +262,15 @@ export default function ProfilePage() {
                 </div>
                 {editing === "partner" && (
                   <NicknameEditor
-                    initial={partner.nickname || partner.displayName}
+                    initial={partnerName}
                     placeholder={t("profile.theirNickname")}
                     onSave={saveNickname(userDoc.partnerId)}
                     onDone={() => setEditing(null)}
                   />
                 )}
                 <p className="text-xs text-muted">{t("profile.partnerNicknameHint")}</p>
-                {userDoc.nickname && (
-                  <p className="text-sm italic text-muted">{t("profile.theyCallYou", { name: userDoc.nickname })}</p>
+                {nicknames[uid] && (
+                  <p className="text-sm italic text-muted">{t("profile.theyCallYou", { name: nicknames[uid] })}</p>
                 )}
               </>
             ) : (

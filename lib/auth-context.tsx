@@ -10,9 +10,9 @@ import {
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, onSnapshot } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
-import { coupleIdFor, ensureCouple } from "@/lib/couple";
+import { adoptLegacyNicknames, coupleIdFor, ensureCouple } from "@/lib/couple";
 import type { User as FirebaseUser } from "firebase/auth";
-import type { User as FirestoreUser } from "@/lib/types";
+import type { Couple, User as FirestoreUser } from "@/lib/types";
 
 interface AuthContextValue {
   firebaseUser: FirebaseUser | null;
@@ -20,6 +20,11 @@ interface AuthContextValue {
   partnerDoc: FirestoreUser | null;
   /** Set only once the couple doc + coupleId are in place for both partners. */
   coupleId: string | null;
+  /** Per-couple nicknames by uid (empty when unpaired). */
+  nicknames: Record<string, string>;
+  /** Nickname within the couple, else Google display name. */
+  myName: string;
+  partnerName: string;
   loading: boolean;
 }
 
@@ -101,6 +106,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     );
   }, [uid, partnerId, partnerDoc, coupleReady]);
 
+  const readyCoupleId = coupleReady ? expectedCoupleId : null;
+  const [coupleState, setCoupleState] = useState<{ id: string; doc: Couple | null } | null>(null);
+
+  useEffect(() => {
+    if (!readyCoupleId) return;
+    return onSnapshot(
+      doc(db, "couples", readyCoupleId),
+      (snap) =>
+        setCoupleState({ id: readyCoupleId, doc: snap.exists() ? (snap.data() as Couple) : null }),
+      (e) => console.warn("Failed to load couple:", e)
+    );
+  }, [readyCoupleId]);
+
+  const couple = readyCoupleId && coupleState?.id === readyCoupleId ? coupleState.doc : null;
+
+  // Move legacy per-user nicknames into the couple doc, once.
+  const nicknamesMissing = !!couple && couple.nicknames === undefined;
+  useEffect(() => {
+    if (!uid || !partnerId || !readyCoupleId || !nicknamesMissing) return;
+    adoptLegacyNicknames(db, readyCoupleId, uid, partnerId).catch((e) =>
+      console.error("Failed to move nicknames into the couple:", e)
+    );
+  }, [uid, partnerId, readyCoupleId, nicknamesMissing]);
+
+  const nicknames = couple?.nicknames ?? {};
+  const myName = (uid && nicknames[uid]) || userDoc?.displayName || "";
+  const partnerName = (partnerId && nicknames[partnerId]) || partnerDoc?.displayName || "";
+
   const loading = authLoading || (uid !== null && userState?.uid !== uid);
 
   return (
@@ -109,7 +142,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         firebaseUser,
         userDoc,
         partnerDoc,
-        coupleId: coupleReady ? expectedCoupleId : null,
+        coupleId: readyCoupleId,
+        nicknames,
+        myName,
+        partnerName,
         loading,
       }}
     >
