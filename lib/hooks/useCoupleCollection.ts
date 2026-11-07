@@ -37,7 +37,10 @@ export function useCoupleCollection<T extends { id?: string }>(
           loaded: true,
         }),
       (error) => {
-        console.error(`Failed to listen to ${key}:`, error);
+        // permission-denied is expected for a moment right after unpairing,
+        // before coupleId clears and this listener is detached.
+        const log = (error as { code?: string }).code === "permission-denied" ? console.warn : console.error;
+        log(`Failed to listen to ${key}:`, error);
         setState((s) => ({ ...s, key, error, loaded: true }));
       }
     );
