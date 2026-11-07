@@ -4,6 +4,8 @@ import { db, auth } from "./firebase";
 import type { Locale } from "./types";
 
 const provider = new GoogleAuthProvider();
+// Always show Google's account chooser, so signing out and back in can switch accounts.
+provider.setCustomParameters({ prompt: "select_account" });
 
 export async function signInWithGoogle(locale: Locale = "vi") {
   const result = await signInWithPopup(auth, provider);
