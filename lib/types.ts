@@ -9,6 +9,7 @@ export interface User {
   photoURL: string;
   partnerId: string | null;
   coupleId?: string | null;
+  /** Legacy: nicknames now live on the couple doc. Moved there on first load. */
   nickname?: string;
   inviteCode: string;
   points: number;
@@ -18,6 +19,8 @@ export interface User {
 
 export interface Couple {
   members: [string, string];
+  /** Per-couple nicknames by uid; cleared when the couple disconnects. */
+  nicknames?: Record<string, string>;
   createdAt: Timestamp;
 }
 

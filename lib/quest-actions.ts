@@ -7,7 +7,7 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { coupleDoc } from "@/lib/couple";
-import { completionFor, isEligible, isWholeExpired } from "@/lib/quests";
+import { completionFor, isEligible, isOverdue, isWholeExpired } from "@/lib/quests";
 import type { Quest } from "@/lib/types";
 
 /**
@@ -30,6 +30,8 @@ export async function toggleQuestCompletion(opts: {
     if (!qSnap.exists() || !uSnap.exists()) throw new Error("not-found");
     const data = qSnap.data() as Quest;
     if (!isEligible(data, uid, partnerId)) throw new Error("not-eligible");
+    // Past its date and not done: closed for good (the creator can move the date).
+    if (isOverdue(data, uid, partnerId, now)) throw new Error("overdue");
     const points: number = uSnap.data().points ?? 0;
     const expired = isWholeExpired(data, now);
 

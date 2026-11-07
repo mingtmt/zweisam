@@ -53,13 +53,15 @@ We chose the PWA approach over a native mobile app for several strategic reasons
 
 ```
 users/{uid}                      profile, points, partnerId, coupleId, locale
-couples/{uidA_uidB}              { members: [uidA, uidB] }   (uids sorted)
+couples/{uidA_uidB}              { members: [uidA, uidB], nicknames }   (uids sorted)
 couples/{coupleId}/quests/{id}   daily / weekly / special quests
 couples/{coupleId}/rewards/{id}  maxClaims (null = unlimited), claimCount
 couples/{coupleId}/claims/{id}   claim history; reward owner marks fulfilledAt
 ```
 
 Pairing writes the couple doc and `coupleId` on both users in one transaction.
+Nicknames live on the couple doc (`nicknames.{uid}`) and are cleared when the
+couple disconnects, so a new partner never sees an old nickname.
 Each completion stores the points it awarded (`awarded.{uid}`), so unticking
 refunds exactly that amount even if the quest's points were edited since.
 A claim can be cancelled by its claimer until it is marked given; the points are
