@@ -4,6 +4,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -11,6 +12,7 @@ import { onAuthStateChanged } from "firebase/auth";
 import { doc, onSnapshot } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { coupleIdFor, ensureCouple } from "@/lib/couple";
+import { migrateLegacyData } from "@/lib/legacy-migration";
 import type { User as FirebaseUser } from "firebase/auth";
 import type { User as FirestoreUser } from "@/lib/types";
 
@@ -100,6 +102,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.error("Failed to set up couple:", e)
     );
   }, [uid, partnerId, partnerDoc, coupleReady]);
+
+  // Move this user's docs out of the legacy root collections, once per session.
+  const migratedFor = useRef<string | null>(null);
+  const readyCoupleId = coupleReady ? expectedCoupleId : null;
+  useEffect(() => {
+    if (!uid || !readyCoupleId || migratedFor.current === readyCoupleId) return;
+    migratedFor.current = readyCoupleId;
+    migrateLegacyData(uid, readyCoupleId)
+      .then((n) => n > 0 && console.info(`Moved ${n} legacy docs into the couple.`))
+      .catch((e) => console.error("Legacy data migration failed:", e));
+  }, [uid, readyCoupleId]);
 
   const loading = authLoading || (uid !== null && userState?.uid !== uid);
 

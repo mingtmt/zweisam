@@ -8,8 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "migrate:nickname": "node --experimental-strip-types --env-file=.env.local scripts/migrate-nickname.ts",
-    "migrate:couples": "node --experimental-strip-types --env-file=.env.local scripts/migrate-to-couples.ts"
+    "migrate:nickname": "node --experimental-strip-types --env-file=.env.local scripts/migrate-nickname.ts"
   },
   "dependencies": {
     "firebase": "^12.19.0",
