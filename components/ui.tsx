@@ -2,9 +2,13 @@
 
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 
-/** Shared class strings and tiny building blocks for a consistent look. */
-export const inputClass =
-  "w-full rounded-2xl border border-line bg-soft px-3.5 py-3 text-[15px] outline-none transition-colors placeholder:text-muted/70 focus:border-accent focus:ring-2 focus:ring-accent/25";
+// Shared class strings and tiny building blocks for a consistent look.
+
+/** Input look without a width, for inputs sized by the caller. */
+export const inputBase =
+  "rounded-2xl border border-line bg-soft px-3.5 py-3 text-[15px] outline-none transition-colors placeholder:text-muted/70 focus:border-accent focus:ring-2 focus:ring-accent/25";
+
+export const inputClass = `w-full ${inputBase}`;
 
 export const labelClass = "mb-1.5 block text-xs font-bold text-muted";
 

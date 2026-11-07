@@ -7,7 +7,7 @@ import { coupleCol, coupleDoc } from "@/lib/couple";
 import { useI18n } from "@/lib/i18n";
 import { SAMPLE_REWARDS } from "@/lib/samples";
 import BottomSheet from "@/components/BottomSheet";
-import { Button, Segmented, inputClass, labelClass } from "@/components/ui";
+import { Button, Segmented, inputBase, inputClass, labelClass } from "@/components/ui";
 import type { Reward } from "@/lib/types";
 
 interface RewardFormProps {
@@ -149,7 +149,7 @@ export default function RewardForm({ coupleId, creatorUid, initial, onClose }: R
           />
           {mode === "limited" && (
             <div className="mt-2 flex items-center gap-3">
-              <label className="text-sm font-semibold text-muted" htmlFor="reward-max">
+              <label className="flex-1 text-sm font-semibold text-muted" htmlFor="reward-max">
                 {t("rewardForm.limitCount")}
               </label>
               <input
@@ -159,7 +159,7 @@ export default function RewardForm({ coupleId, creatorUid, initial, onClose }: R
                 min={1}
                 value={Number.isNaN(maxClaims) ? "" : maxClaims}
                 onChange={(e) => setMaxClaims(e.target.valueAsNumber)}
-                className={`${inputClass} w-24 text-center`}
+                className={`${inputBase} w-24 shrink-0 text-center`}
               />
             </div>
           )}

@@ -8,7 +8,7 @@ import { useI18n } from "@/lib/i18n";
 import { SAMPLE_QUESTS } from "@/lib/samples";
 import BottomSheet from "@/components/BottomSheet";
 import QuestIcon, { QUEST_ICONS } from "@/components/QuestIcon";
-import { Button, Segmented, inputClass, labelClass } from "@/components/ui";
+import { Button, Segmented, inputBase, inputClass, labelClass } from "@/components/ui";
 import type { Quest, QuestSchedule } from "@/lib/types";
 
 interface QuestFormProps {
@@ -193,7 +193,7 @@ export default function QuestForm({
                 key={p}
                 type="button"
                 onClick={() => setPoints(p)}
-                className={`min-h-11 flex-1 rounded-2xl text-sm font-extrabold transition-colors ${
+                className={`min-h-11 min-w-0 flex-1 rounded-2xl text-sm font-extrabold transition-colors ${
                   points === p ? "bg-gold-soft text-gold ring-2 ring-gold/40" : "bg-soft text-muted"
                 }`}
               >
@@ -207,7 +207,7 @@ export default function QuestForm({
               min={1}
               value={Number.isNaN(points) ? "" : points}
               onChange={(e) => setPoints(e.target.valueAsNumber)}
-              className={`${inputClass} w-20 text-center`}
+              className={`${inputBase} w-20 shrink-0 text-center`}
             />
           </div>
         </div>
