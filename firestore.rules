@@ -129,5 +129,16 @@ service cloud.firestore {
         allow delete: if false;
       }
     }
+
+    // --------------------------------------------------- legacy (temporary)
+    // Old root collections from before couples existed. The app moves each
+    // user's own docs into their couple on sign-in (lib/legacy-migration.ts).
+    // Remove these two blocks once both partners have opened the new version.
+    match /quests/{questId} {
+      allow read, delete: if signedIn() && resource.data.createdBy == request.auth.uid;
+    }
+    match /rewards/{rewardId} {
+      allow read, delete: if signedIn() && resource.data.createdBy == request.auth.uid;
+    }
   }
 }

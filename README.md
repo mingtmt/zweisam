@@ -45,6 +45,39 @@ We chose the PWA approach over a native mobile app for several strategic reasons
 ## 5. Development Roadmap
 - [x] **Phase 1:** Initialize the Next.js project, install Tailwind CSS, and configure Next.js metadata (Manifest/Icons) for PWA installation.
 - [x] **Phase 2:** Set up the Firebase project, design the Firestore database schema, and integrate Authentication.
-- [ ] **Phase 3:** Build the core UI screens: Home (Quests), Store (Rewards), and Profile.
-- [ ] **Phase 4:** Write the Custom Service Worker (`firebase-messaging-sw.js`), implement real-time data syncing, and integrate FCM Push Notifications.
+- [x] **Phase 3:** Build the core UI screens: Home (Quests), Store (Rewards), and Profile.
+- [ ] **Phase 4:** ~~Real-time data syncing~~ (done: `onSnapshot` everywhere). Remaining: Custom Service Worker (`firebase-messaging-sw.js`) and FCM Push Notifications.
 - [ ] **Phase 5:** Conduct internal testing on actual mobile devices, fix UI/UX bugs, and deploy the official build to Vercel.
+
+## 6. Data model
+
+```
+users/{uid}                      profile, points, partnerId, coupleId, locale
+couples/{uidA_uidB}              { members: [uidA, uidB] }   (uids sorted)
+couples/{coupleId}/quests/{id}   daily / weekly / special quests
+couples/{coupleId}/rewards/{id}  maxClaims (null = unlimited), claimCount
+couples/{coupleId}/claims/{id}   claim history; reward owner marks fulfilledAt
+```
+
+Pairing writes the couple doc and `coupleId` on both users in one transaction.
+Quests and rewards from before couples existed live in root `quests` / `rewards`
+collections; each partner's own docs are moved into the couple automatically the
+first time they open the app (`lib/legacy-migration.ts`).
+
+## 7. Deploying
+
+1. **Firestore rules** (do this first: the app depends on them)
+   ```bash
+   npx firebase-tools login
+   npx firebase-tools deploy --only firestore:rules
+   ```
+   `.firebaserc` already points at the project. After **both** partners have
+   opened the new version once, delete the two `legacy (temporary)` blocks at the
+   end of `firestore.rules` and deploy again.
+2. **Vercel**: import the GitHub repo, add the six `NEXT_PUBLIC_FIREBASE_*`
+   variables from `.env.local`, deploy.
+3. **Firebase Auth**: add the Vercel domain under Authentication → Settings →
+   Authorized domains.
+4. **On each phone**: open the site, *Add to Home Screen*, sign in from the
+   installed app. If Google sign-in fails inside the installed iOS app, switch
+   `signInWithPopup` to `signInWithRedirect` in `lib/auth.ts`.
