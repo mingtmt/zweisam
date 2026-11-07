@@ -36,9 +36,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
       setFirebaseUser(user);
-      const snap = await getDoc(doc(db, "users", user.uid));
-      setUserDoc(snap.exists() ? (snap.data() as FirestoreUser) : null);
-      setLoading(false);
+      try {
+        const snap = await getDoc(doc(db, "users", user.uid));
+        setUserDoc(snap.exists() ? (snap.data() as FirestoreUser) : null);
+      } catch (e) {
+        console.error("Failed to load user profile:", e);
+        setUserDoc(null);
+      } finally {
+        setLoading(false);
+      }
     });
     return () => unsub();
   }, []);
