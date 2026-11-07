@@ -8,6 +8,8 @@ interface ConfirmModalProps {
   title: string;
   message: string;
   confirmLabel: string;
+  /** Label for the dismiss button (defaults to "Cancel"). */
+  cancelLabel?: string;
   danger?: boolean;
   onConfirm: () => void;
   onClose: () => void;
@@ -17,6 +19,7 @@ export default function ConfirmModal({
   title,
   message,
   confirmLabel,
+  cancelLabel,
   danger,
   onConfirm,
   onClose,
@@ -29,7 +32,7 @@ export default function ConfirmModal({
       footer={
         <div className="flex gap-2">
           <Button variant="secondary" className="flex-1" onClick={onClose}>
-            {t("common.cancel")}
+            {cancelLabel ?? t("common.cancel")}
           </Button>
           <Button variant={danger ? "danger" : "primary"} className="flex-1" onClick={onConfirm}>
             {confirmLabel}

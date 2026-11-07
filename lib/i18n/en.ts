@@ -107,6 +107,7 @@ const en: Record<MessageKey, string> = {
   "store.cancelTitle": "Cancel claim",
   "store.cancelMessage": "Cancel claiming \"{title}\"? You get {n} points back.",
   "store.cancelled": "Cancelled, {n} points refunded",
+  "store.keepClaim": "Keep it",
   "store.cancelFailed": "Couldn't cancel. Please try again.",
   "home.today": "Today",
   "home.todayDone": "🎉 {name} finished every quest today!",

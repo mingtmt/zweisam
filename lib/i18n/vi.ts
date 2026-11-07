@@ -112,6 +112,7 @@ const vi = {
   "store.cancelTitle": "Huỷ đổi thưởng",
   "store.cancelMessage": "Huỷ đổi \"{title}\"? Bạn được hoàn lại {n} điểm.",
   "store.cancelled": "Đã huỷ, hoàn {n} điểm",
+  "store.keepClaim": "Giữ lại",
   "store.cancelFailed": "Không huỷ được. Thử lại nhé.",
   "home.today": "Hôm nay",
   "home.todayDone": "🎉 {name} đã xong hết nhiệm vụ hôm nay!",
