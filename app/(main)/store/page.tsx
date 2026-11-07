@@ -327,7 +327,8 @@ export default function StorePage() {
         <ConfirmModal
           title={t("store.cancelTitle")}
           message={t("store.cancelMessage", { title: confirm.claim.rewardTitle, n: confirm.claim.pointCost })}
-          confirmLabel={t("store.history.cancel")}
+          confirmLabel={t("store.cancelTitle")}
+          cancelLabel={t("store.keepClaim")}
           danger
           onConfirm={handleConfirm}
           onClose={() => setConfirm(null)}
