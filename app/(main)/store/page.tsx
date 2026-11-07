@@ -23,7 +23,9 @@ import {
 import type { Claim, Reward } from "@/lib/types";
 
 type Tab = "forMe" | "mine" | "history";
-type ConfirmAction = { kind: "claim" | "delete"; reward: Reward };
+type ConfirmAction =
+  | { kind: "claim" | "delete"; reward: Reward }
+  | { kind: "cancel"; claim: Claim };
 
 function remainingOf(r: Reward) {
   return r.maxClaims == null ? null : Math.max(0, r.maxClaims - (r.claimCount ?? 0));
@@ -46,7 +48,10 @@ export default function StorePage() {
   const partnerLabel = partnerDoc?.nickname || partnerDoc?.displayName || t("common.partner");
 
   const { forMe, mine } = useMemo(() => {
-    const sorted = [...rewardsQ.items].sort((a, b) => a.pointCost - b.pointCost || createdMs(a) - createdMs(b));
+    const soldOut = (r: Reward) => (remainingOf(r) === 0 ? 1 : 0);
+    const sorted = [...rewardsQ.items].sort(
+      (a, b) => soldOut(a) - soldOut(b) || a.pointCost - b.pointCost || createdMs(a) - createdMs(b)
+    );
     return {
       forMe: sorted.filter((r) => r.createdBy !== uid),
       mine: sorted.filter((r) => r.createdBy === uid),
@@ -57,7 +62,7 @@ export default function StorePage() {
     () => [...claimsQ.items].sort((a, b) => (tsMs(b.claimedAt) ?? Infinity) - (tsMs(a.claimedAt) ?? Infinity)),
     [claimsQ.items]
   );
-  const toGive = claims.filter((c) => c.rewardOwner === uid && !c.fulfilledAt).length;
+  const toGive = claims.filter((c) => c.rewardOwner === uid && !c.fulfilledAt && !c.cancelledAt).length;
 
   async function claimReward(reward: Reward) {
     if (busyId || !uid || !coupleId || !reward.id) return;
@@ -110,6 +115,34 @@ export default function StorePage() {
     }
   }
 
+  async function cancelClaim(claim: Claim) {
+    if (!uid || !coupleId || !claim.id) return;
+    const claimId = claim.id;
+    setBusyId(claimId);
+    try {
+      await runTransaction(db, async (tx) => {
+        const cRef = coupleDoc(db, coupleId, "claims", claimId);
+        const rRef = coupleDoc(db, coupleId, "rewards", claim.rewardId);
+        const uRef = doc(db, "users", uid);
+        const [cSnap, rSnap, uSnap] = await Promise.all([tx.get(cRef), tx.get(rRef), tx.get(uRef)]);
+        if (!cSnap.exists() || !uSnap.exists()) throw new Error("not-found");
+        const c = cSnap.data() as Claim;
+        if (c.claimedBy !== uid || c.fulfilledAt || c.cancelledAt) throw new Error("not-cancellable");
+        tx.update(uRef, { points: (uSnap.data().points ?? 0) + c.pointCost });
+        tx.update(cRef, { cancelledAt: serverTimestamp() });
+        // Give the claim back to the reward, if it still exists.
+        const count: number = rSnap.exists() ? rSnap.data().claimCount ?? 0 : 0;
+        if (count > 0) tx.update(rRef, { claimCount: count - 1, lastCancelledClaim: claimId });
+      });
+      toast(t("store.cancelled", { n: claim.pointCost }), "success");
+    } catch (e) {
+      console.error(e);
+      toast(t("store.cancelFailed"), "error");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function markFulfilled(claim: Claim) {
     if (!coupleId || !claim.id) return;
     try {
@@ -122,7 +155,8 @@ export default function StorePage() {
 
   function handleConfirm() {
     if (!confirm) return;
-    if (confirm.kind === "claim") claimReward(confirm.reward);
+    if (confirm.kind === "cancel") cancelClaim(confirm.claim);
+    else if (confirm.kind === "claim") claimReward(confirm.reward);
     else deleteReward(confirm.reward);
     setConfirm(null);
   }
@@ -235,10 +269,12 @@ export default function StorePage() {
             return (
               <li key={c.id} className={`${cardClass} flex items-center gap-3 p-3.5`}>
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-accent-soft text-lg" aria-hidden="true">
-                  {c.fulfilledAt ? "💝" : "🎁"}
+                  {c.cancelledAt ? "↩️" : c.fulfilledAt ? "💝" : "🎁"}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate font-extrabold">{c.rewardTitle}</p>
+                  <p className={`truncate font-extrabold ${c.cancelledAt ? "text-muted line-through" : ""}`}>
+                    {c.rewardTitle}
+                  </p>
                   <p className="text-xs text-muted">
                     {t("store.history.claimed", { who: c.claimedBy === uid ? myLabel : partnerLabel })}
                     {" · "}
@@ -246,7 +282,11 @@ export default function StorePage() {
                     {when !== null && ` · ${formatDateTime(when)}`}
                   </p>
                 </div>
-                {c.fulfilledAt ? (
+                {c.cancelledAt ? (
+                  <span className="rounded-full bg-soft px-2.5 py-1 text-xs font-bold text-muted">
+                    {t("store.history.cancelled")}
+                  </span>
+                ) : c.fulfilledAt ? (
                   <span className="rounded-full bg-mint-soft px-2.5 py-1 text-xs font-bold text-mint">
                     {t("store.history.fulfilled")}
                   </span>
@@ -254,6 +294,20 @@ export default function StorePage() {
                   <Button className="min-h-9 px-3 text-xs" onClick={() => markFulfilled(c)}>
                     {t("store.history.markFulfilled")}
                   </Button>
+                ) : c.claimedBy === uid ? (
+                  <div className="flex shrink-0 flex-col items-end gap-1">
+                    <span className="rounded-full bg-gold-soft px-2.5 py-1 text-xs font-bold text-gold">
+                      {t("store.history.pending")}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setConfirm({ kind: "cancel", claim: c })}
+                      disabled={busyId === c.id}
+                      className="rounded-full px-2 py-0.5 text-xs font-bold text-muted hover:bg-soft hover:text-danger disabled:opacity-40"
+                    >
+                      {t("store.history.cancel")}
+                    </button>
+                  </div>
                 ) : (
                   <span className="rounded-full bg-gold-soft px-2.5 py-1 text-xs font-bold text-gold">
                     {t("store.history.pending")}
@@ -269,7 +323,18 @@ export default function StorePage() {
         <RewardForm coupleId={coupleId} creatorUid={uid} initial={form.reward} onClose={() => setForm(null)} />
       )}
 
-      {confirm && (
+      {confirm?.kind === "cancel" && (
+        <ConfirmModal
+          title={t("store.cancelTitle")}
+          message={t("store.cancelMessage", { title: confirm.claim.rewardTitle, n: confirm.claim.pointCost })}
+          confirmLabel={t("store.history.cancel")}
+          danger
+          onConfirm={handleConfirm}
+          onClose={() => setConfirm(null)}
+        />
+      )}
+
+      {confirm && confirm.kind !== "cancel" && (
         <ConfirmModal
           title={t(confirm.kind === "claim" ? "store.claimTitle" : "store.deleteTitle")}
           message={

@@ -13,7 +13,7 @@ function MainShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { firebaseUser, userDoc, coupleId, loading } = useAuth();
   const { items: claims } = useCoupleCollection<Claim>(coupleId, "claims");
-  const toGive = claims.filter((c) => c.rewardOwner === firebaseUser?.uid && !c.fulfilledAt).length;
+  const toGive = claims.filter((c) => c.rewardOwner === firebaseUser?.uid && !c.fulfilledAt && !c.cancelledAt).length;
 
   useEffect(() => {
     if (!loading && !firebaseUser) router.replace("/login");

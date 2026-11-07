@@ -117,3 +117,29 @@ export function targetIsViewer(
     (target === "partner" && partnerId === quest.createdBy)
   );
 }
+
+const DAY_MS = 86_400_000;
+
+/** A special quest whose date has passed without being completed. */
+export function isOverdue(
+  quest: Quest,
+  uid: string | null | undefined,
+  partnerId: string | null | undefined,
+  now: number
+): boolean {
+  if (quest.schedule !== "special" || !quest.scheduledAt) return false;
+  const due = Date.parse(quest.scheduledAt);
+  return !Number.isNaN(due) && now > due && !questCompleted(quest, uid, partnerId);
+}
+
+/** A completed special quest is hidden one day after its last completion. */
+export function isSpecialArchived(
+  quest: Quest,
+  uid: string | null | undefined,
+  partnerId: string | null | undefined,
+  now: number
+): boolean {
+  if (quest.schedule !== "special" || !questCompleted(quest, uid, partnerId)) return false;
+  const times = allCompletedMs(quest);
+  return times.length > 0 && now - Math.max(...times) > DAY_MS;
+}

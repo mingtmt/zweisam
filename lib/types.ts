@@ -36,6 +36,8 @@ export interface Quest {
   target?: string;
   completedBy?: string;
   completions?: Record<string, Timestamp>;
+  /** Points credited to each user for their current completion (refunded on untick). */
+  awarded?: Record<string, number>;
   icon?: string;
   scheduledAt?: string;
   completedAt?: Timestamp | Date;
@@ -51,6 +53,8 @@ export interface Reward {
   /** null = can be claimed any number of times until deleted. */
   maxClaims: number | null;
   claimCount: number;
+  /** Set together with a claimCount decrement when a claim is cancelled. */
+  lastCancelledClaim?: string;
   createdAt: Timestamp;
 }
 
@@ -64,4 +68,5 @@ export interface Claim {
   rewardOwner: string;
   claimedAt: Timestamp;
   fulfilledAt?: Timestamp | null;
+  cancelledAt?: Timestamp | null;
 }

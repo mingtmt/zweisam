@@ -48,6 +48,7 @@ const vi = {
   "quest.schedule.weekly": "Hằng tuần",
   "quest.schedule.special": "Đặc biệt",
   "quest.due": "Hạn {date}",
+  "quest.overdue": "Quá hạn · {date}",
   "quest.only": "Chỉ {name}",
   "quest.doneByYou": "✓ Bạn đã xong",
   "quest.doneBy": "✓ {name} đã xong",
@@ -106,6 +107,14 @@ const vi = {
   "store.history.owesYou": "{name} nợ bạn",
   "store.history.youOwe": "Bạn cần trao",
   "store.pendingBadge": "{n} món cần trao",
+  "store.history.cancel": "Huỷ",
+  "store.history.cancelled": "Đã huỷ",
+  "store.cancelTitle": "Huỷ đổi thưởng",
+  "store.cancelMessage": "Huỷ đổi \"{title}\"? Bạn được hoàn lại {n} điểm.",
+  "store.cancelled": "Đã huỷ, hoàn {n} điểm",
+  "store.cancelFailed": "Không huỷ được. Thử lại nhé.",
+  "home.today": "Hôm nay",
+  "home.todayDone": "🎉 {name} đã xong hết nhiệm vụ hôm nay!",
 
   // reward form
   "rewardForm.newTitle": "Phần thưởng mới",
