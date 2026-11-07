@@ -1,10 +1,11 @@
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { GoogleAuthProvider, signInWithPopup, signOut } from "firebase/auth";
 import { db, auth } from "./firebase";
+import type { Locale } from "./types";
 
 const provider = new GoogleAuthProvider();
 
-export async function signInWithGoogle() {
+export async function signInWithGoogle(locale: Locale = "vi") {
   const result = await signInWithPopup(auth, provider);
   const user = result.user;
 
@@ -18,6 +19,8 @@ export async function signInWithGoogle() {
       email: user.email,
       photoURL: user.photoURL,
       partnerId: null,
+      coupleId: null,
+      locale,
       inviteCode: code,
       points: 0,
       createdAt: serverTimestamp(),

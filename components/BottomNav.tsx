@@ -2,76 +2,71 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useI18n, type MessageKey } from "@/lib/i18n";
 
-const tabs = [
+const tabs: { label: MessageKey; href: string; icon: React.ReactNode; badge?: boolean }[] = [
   {
-    label: "Home",
+    label: "nav.home",
     href: "/",
-    icon: (
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0a1 1 0 01-1-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 01-1 1h-2z"
-      />
-    ),
+    icon: <path d="M4 10.5L12 4l8 6.5V19a1 1 0 01-1 1h-4.5v-5h-5v5H5a1 1 0 01-1-1v-8.5z" />,
   },
   {
-    label: "Store",
+    label: "nav.store",
     href: "/store",
+    badge: true,
     icon: (
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7"
-      />
+      <path d="M4 11h16v8a1 1 0 01-1 1H5a1 1 0 01-1-1v-8zM3 7.5h18V11H3V7.5zM12 7.5V20M12 7.5S10.5 3 8 3.5 6.5 7.5 12 7.5zm0 0s1.5-4.5 4-4 1.5 4-4 4z" />
     ),
   },
   {
-    label: "Profile",
+    label: "nav.profile",
     href: "/profile",
-    icon: (
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-      />
-    ),
+    icon: <path d="M12 12a4 4 0 100-8 4 4 0 000 8zm-7 8a7 7 0 0114 0" />,
   },
 ];
 
-export default function BottomNav() {
+export default function BottomNav({ storeBadge = 0 }: { storeBadge?: number }) {
   const pathname = usePathname();
+  const { t } = useI18n();
 
   return (
-    <nav className="sticky bottom-0 border-t border-zinc-100 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+    <nav className="sticky bottom-0 z-40 border-t border-line bg-card/90 backdrop-blur-md">
       <div className="mx-auto flex max-w-md items-stretch justify-around pb-[env(safe-area-inset-bottom)]">
         {tabs.map((tab) => {
-          const isActive =
-            tab.href === "/"
-              ? pathname === "/"
-              : pathname.startsWith(tab.href);
+          const isActive = tab.href === "/" ? pathname === "/" : pathname.startsWith(tab.href);
           return (
             <Link
               key={tab.href}
               href={tab.href}
-              className={`flex flex-1 flex-col items-center gap-0.5 py-2.5 text-[10px] font-medium transition-colors ${
-                isActive
-                  ? "text-rose-600 dark:text-rose-500"
-                  : "text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
+              aria-current={isActive ? "page" : undefined}
+              className={`flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 text-[11px] font-bold transition-colors ${
+                isActive ? "text-accent" : "text-muted hover:text-foreground"
               }`}
             >
-              <svg
-                className="h-5 w-5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
+              <span
+                className={`relative flex h-8 w-14 items-center justify-center rounded-full transition-colors ${
+                  isActive ? "bg-accent-soft" : ""
+                }`}
               >
-                {tab.icon}
-              </svg>
-              {tab.label}
+                <svg
+                  className="h-[22px] w-[22px]"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  {tab.icon}
+                </svg>
+                {tab.badge && storeBadge > 0 && (
+                  <span className="absolute right-2 top-0 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-extrabold text-on-accent">
+                    {storeBadge}
+                  </span>
+                )}
+              </span>
+              {t(tab.label)}
             </Link>
           );
         })}
