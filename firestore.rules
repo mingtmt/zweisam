@@ -30,6 +30,19 @@ service cloud.firestore {
         && userDoc(request.auth.uid).data.get('coupleId', null) == coupleId;
     }
 
+    function claimDoc(coupleId, claimId) {
+      return /databases/$(database)/documents/couples/$(coupleId)/claims/$(claimId);
+    }
+
+    // The caller cancels their own, still-open claim on this reward in the same write.
+    function cancelsOwnClaim(coupleId, rewardId, claimId) {
+      let before = get(claimDoc(coupleId, claimId)).data;
+      return before.rewardId == rewardId
+        && before.claimedBy == request.auth.uid
+        && before.get('cancelledAt', null) == null
+        && getAfter(claimDoc(coupleId, claimId)).data.get('cancelledAt', null) != null;
+    }
+
     function changedOnly(keys) {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
     }
@@ -81,7 +94,7 @@ service cloud.firestore {
           (resource.data.createdBy == request.auth.uid
             && request.resource.data.createdBy == resource.data.createdBy)
           // either partner ticks / unticks
-          || changedOnly(['completions', 'status', 'completedBy', 'completedAt'])
+          || changedOnly(['completions', 'awarded', 'status', 'completedBy', 'completedAt'])
         );
         allow delete: if isMember(coupleId)
           && resource.data.createdBy == request.auth.uid;
@@ -104,6 +117,11 @@ service cloud.firestore {
             && request.resource.data.claimCount == resource.data.get('claimCount', 0) + 1
             && (resource.data.get('maxClaims', null) == null
                 || request.resource.data.claimCount <= resource.data.maxClaims))
+          // partner cancels one of their claims: -1, tied to that cancellation
+          || (resource.data.createdBy != request.auth.uid
+            && changedOnly(['claimCount', 'lastCancelledClaim'])
+            && request.resource.data.claimCount == resource.data.get('claimCount', 0) - 1
+            && cancelsOwnClaim(coupleId, rewardId, request.resource.data.lastCancelledClaim))
         );
         allow delete: if isMember(coupleId)
           && resource.data.createdBy == request.auth.uid;
@@ -116,29 +134,27 @@ service cloud.firestore {
           && request.resource.data.claimedBy == request.auth.uid
           && request.resource.data.rewardOwner != request.auth.uid
           && request.resource.data.fulfilledAt == null
+          && request.resource.data.get('cancelledAt', null) == null
           && get(/databases/$(database)/documents/couples/$(coupleId)/rewards/$(request.resource.data.rewardId)).data.createdBy
               == request.resource.data.rewardOwner
           && get(/databases/$(database)/documents/couples/$(coupleId)/rewards/$(request.resource.data.rewardId)).data.pointCost
               == request.resource.data.pointCost
           && getAfter(/databases/$(database)/documents/couples/$(coupleId)/rewards/$(request.resource.data.rewardId)).data.claimCount
               == get(/databases/$(database)/documents/couples/$(coupleId)/rewards/$(request.resource.data.rewardId)).data.get('claimCount', 0) + 1;
-        // the partner who owes the reward marks it as given
         allow update: if isMember(coupleId)
-          && resource.data.rewardOwner == request.auth.uid
-          && changedOnly(['fulfilledAt']);
+          && resource.data.get('cancelledAt', null) == null
+          && (
+            // the partner who owes the reward marks it as given
+            (resource.data.rewardOwner == request.auth.uid
+              && changedOnly(['fulfilledAt']))
+            // the claimer cancels before it was given (points are refunded client-side)
+            || (resource.data.claimedBy == request.auth.uid
+              && resource.data.get('fulfilledAt', null) == null
+              && changedOnly(['cancelledAt'])
+              && request.resource.data.cancelledAt != null)
+          );
         allow delete: if false;
       }
-    }
-
-    // --------------------------------------------------- legacy (temporary)
-    // Old root collections from before couples existed. The app moves each
-    // user's own docs into their couple on sign-in (lib/legacy-migration.ts).
-    // Remove these two blocks once both partners have opened the new version.
-    match /quests/{questId} {
-      allow read, delete: if signedIn() && resource.data.createdBy == request.auth.uid;
-    }
-    match /rewards/{rewardId} {
-      allow read, delete: if signedIn() && resource.data.createdBy == request.auth.uid;
     }
   }
 }

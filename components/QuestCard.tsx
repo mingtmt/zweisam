@@ -13,6 +13,8 @@ interface QuestCardProps {
   targetName?: string;
   myDone?: boolean;
   partnerDone?: boolean;
+  /** Special quest whose date passed without completion. */
+  overdue?: boolean;
   onEdit?: (quest: Quest) => void;
   onDelete?: (quest: Quest) => void;
   /** Points just earned, shown as a floating "+N" (changes key to replay). */
@@ -29,6 +31,7 @@ export default function QuestCard({
   targetName,
   myDone,
   partnerDone,
+  overdue,
   onEdit,
   onDelete,
   burst,
@@ -59,7 +62,12 @@ export default function QuestCard({
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
           <PointsPill>{quest.points}</PointsPill>
           <span className={`${tag} bg-soft text-muted`}>{t(`quest.schedule.${quest.schedule}` as const)}</span>
-          {due && <span className={`${tag} bg-accent-soft text-accent`}>{t("quest.due", { date: due })}</span>}
+          {due &&
+            (overdue ? (
+              <span className={`${tag} bg-danger-soft text-danger`}>{t("quest.overdue", { date: due })}</span>
+            ) : (
+              <span className={`${tag} bg-accent-soft text-accent`}>{t("quest.due", { date: due })}</span>
+            ))}
           {targetName && (
             <span className={`${tag} border border-accent/40 text-accent`}>{t("quest.only", { name: targetName })}</span>
           )}

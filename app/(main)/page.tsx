@@ -13,6 +13,8 @@ import {
   completionFor,
   createdMs,
   isEligible,
+  isOverdue,
+  isSpecialArchived,
   isWholeExpired,
   targetIsViewer,
   viewerDone,
@@ -21,6 +23,7 @@ import { toggleQuestCompletion } from "@/lib/quest-actions";
 import Avatar from "@/components/Avatar";
 import QuestForm from "@/components/QuestForm";
 import QuestCard from "@/components/QuestCard";
+import TodayProgress from "@/components/TodayProgress";
 import ConfirmModal from "@/components/ConfirmModal";
 import { useToast } from "@/components/Toast";
 import { Button, EmptyState, ErrorState, SkeletonList, cardClass } from "@/components/ui";
@@ -101,7 +104,7 @@ export default function HomePage() {
     const active: Quest[] = [];
     const done: Quest[] = [];
     for (const raw of quests) {
-      if (raw.active === false) continue;
+      if (raw.active === false || isSpecialArchived(raw, uid, partnerId, nowMs)) continue;
       const q = {
         ...raw,
         status: viewerDone(raw, uid, partnerId, nowMs) ? "completed" : ("pending" as QuestStatus),
@@ -128,6 +131,7 @@ export default function HomePage() {
         targetName={forViewer === null ? undefined : forViewer ? myLabel : partnerLabel}
         myDone={!expired && completionFor(quest, uid)}
         partnerDone={!expired && completionFor(quest, partnerId)}
+        overdue={isOverdue(quest, uid, partnerId, nowMs)}
         onEdit={mine ? (q) => setForm({ quest: q }) : undefined}
         onDelete={mine ? setDeleteTarget : undefined}
         burst={burst?.questId === quest.id ? burst : null}
@@ -180,6 +184,17 @@ export default function HomePage() {
           </div>
         </div>
       </div>
+
+      {uid && coupleId && !loading && (
+        <TodayProgress
+          quests={quests}
+          uid={uid}
+          partnerId={partnerId}
+          myName={myLabel}
+          partnerName={partnerLabel}
+          now={nowMs}
+        />
+      )}
 
       <div className="mb-4 flex items-center gap-2">
         <Button className="flex-1" onClick={() => setForm({})} disabled={!coupleId}>

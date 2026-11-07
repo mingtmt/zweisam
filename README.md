@@ -60,9 +60,10 @@ couples/{coupleId}/claims/{id}   claim history; reward owner marks fulfilledAt
 ```
 
 Pairing writes the couple doc and `coupleId` on both users in one transaction.
-Quests and rewards from before couples existed live in root `quests` / `rewards`
-collections; each partner's own docs are moved into the couple automatically the
-first time they open the app (`lib/legacy-migration.ts`).
+Each completion stores the points it awarded (`awarded.{uid}`), so unticking
+refunds exactly that amount even if the quest's points were edited since.
+A claim can be cancelled by its claimer until it is marked given; the points are
+refunded and the reward's `claimCount` goes back down.
 
 ## 7. Deploying
 
@@ -71,9 +72,7 @@ first time they open the app (`lib/legacy-migration.ts`).
    npx firebase-tools login
    npx firebase-tools deploy --only firestore:rules
    ```
-   `.firebaserc` already points at the project. After **both** partners have
-   opened the new version once, delete the two `legacy (temporary)` blocks at the
-   end of `firestore.rules` and deploy again.
+   `.firebaserc` already points at the project.
 2. **Vercel**: import the GitHub repo, add the six `NEXT_PUBLIC_FIREBASE_*`
    variables from `.env.local`, deploy.
 3. **Firebase Auth**: add the Vercel domain under Authentication → Settings →
