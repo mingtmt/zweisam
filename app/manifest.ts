@@ -4,14 +4,15 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "Zweisam",
     short_name: "Zweisam",
-    description: "Gamified quests and rewards to grow your relationship.",
+    description: "Nhiệm vụ nhỏ, yêu thương lớn — quest và phần thưởng cho cặp đôi.",
+    lang: "vi",
     id: "/",
     start_url: "/",
     scope: "/",
     display: "standalone",
     orientation: "portrait",
-    background_color: "#ffffff",
-    theme_color: "#e11d48",
+    background_color: "#fff7f2",
+    theme_color: "#fff7f2",
     icons: [
       {
         src: "/icons/icon-192.png",

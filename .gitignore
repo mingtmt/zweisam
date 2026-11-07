@@ -43,6 +43,6 @@ next-env.d.ts
 # codegraph local db
 .codegraph/
 
+
 # graphify
 graphify-out/
-.codegraph/

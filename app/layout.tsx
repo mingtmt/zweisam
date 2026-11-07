@@ -1,15 +1,11 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Nunito } from "next/font/google";
+import { I18nProvider } from "@/lib/i18n";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+const nunito = Nunito({
+  variable: "--font-nunito",
+  subsets: ["latin", "vietnamese"],
 });
 
 export const metadata: Metadata = {
@@ -17,7 +13,7 @@ export const metadata: Metadata = {
     default: "Zweisam",
     template: "%s | Zweisam",
   },
-  description: "Gamified quests and rewards to grow your relationship.",
+  description: "Nhiệm vụ nhỏ, yêu thương lớn — quest và phần thưởng cho cặp đôi.",
   applicationName: "Zweisam",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
@@ -40,7 +36,10 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#e11d48",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#fff7f2" },
+    { media: "(prefers-color-scheme: dark)", color: "#1a1415" },
+  ],
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
@@ -48,11 +47,10 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col">{children}</body>
+    <html lang="vi" className={`${nunito.variable} h-full antialiased`}>
+      <body className="flex min-h-full flex-col">
+        <I18nProvider>{children}</I18nProvider>
+      </body>
     </html>
   );
 }

@@ -1,47 +1,133 @@
 rules_version = '2';
 
+// Data model
+//   users/{uid}                     profile, points, partnerId, coupleId
+//   couples/{coupleId}              { members: [uidA, uidB] }  (uids sorted, id = "uidA_uidB")
+//   couples/{coupleId}/quests/{id}
+//   couples/{coupleId}/rewards/{id}
+//   couples/{coupleId}/claims/{id}
+//
+// Known limitation: a user can still write their own `points` directly.
+// Preventing that needs server-side logic (Cloud Functions); acceptable while
+// the app is used by partners who trust each other.
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // users: invite-code lookup requires querying the collection, so any
-    // signed-in user can read. Own doc is fully controlled by its owner.
-    // A partner may only change partnerId (pair/unpair) or nickname.
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc(uid) {
+      return get(/databases/$(database)/documents/users/$(uid));
+    }
+
+    // Member = listed in the couple doc AND currently paired into it, so an
+    // ex-partner loses access after disconnecting.
+    function isMember(coupleId) {
+      return signedIn()
+        && request.auth.uid in get(/databases/$(database)/documents/couples/$(coupleId)).data.members
+        && userDoc(request.auth.uid).data.get('coupleId', null) == coupleId;
+    }
+
+    function changedOnly(keys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
+    }
+
+    // ---------------------------------------------------------------- users
+    // Read stays open to signed-in users: pairing looks users up by invite code.
     match /users/{userId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth.uid == userId;
-      allow update: if request.auth != null && (
+      allow read: if signedIn();
+      allow create: if signedIn() && request.auth.uid == userId;
+      allow update: if signedIn() && (
         request.auth.uid == userId
-        || (
-          resource.data.partnerId == request.auth.uid
-          && request.resource.data.diff(resource.data).affectedKeys()
-              .hasOnly(['partnerId', 'nickname'])
-        )
-        || (
-          resource.data.partnerId == null
-          && request.resource.data.partnerId == request.auth.uid
-          && request.resource.data.diff(resource.data).affectedKeys()
-              .hasOnly(['partnerId'])
-        )
+        // current partner: nickname, or unpair / heal the couple link
+        || (resource.data.partnerId == request.auth.uid
+            && changedOnly(['partnerId', 'coupleId', 'nickname']))
+        // pairing with an unpaired user
+        || (resource.data.partnerId == null
+            && request.resource.data.partnerId == request.auth.uid
+            && changedOnly(['partnerId', 'coupleId']))
       );
     }
 
-    // quests: shared list for the couple. Creators manage their own quests;
-    // completion updates may only touch status/completion fields.
-    match /quests/{questId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth.uid == request.resource.data.createdBy;
-      allow update: if request.auth != null
-        && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['completions', 'status', 'completedBy', 'completedAt']);
-      allow delete: if request.auth.uid == resource.data.createdBy;
-    }
+    // -------------------------------------------------------------- couples
+    match /couples/{coupleId} {
+      // `resource == null` lets the pairing transaction check whether the doc exists.
+      allow read: if signedIn()
+        && (resource == null || request.auth.uid in resource.data.members);
 
-    // rewards: shared store. Creators add rewards; any signed-in user may
-    // claim (delete) one, matching the store's claim flow.
-    match /rewards/{rewardId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth.uid == request.resource.data.createdBy;
-      allow delete: if request.auth != null;
+      allow create: if signedIn()
+        && request.resource.data.members is list
+        && request.resource.data.members.size() == 2
+        && request.auth.uid in request.resource.data.members
+        && request.resource.data.members[0] < request.resource.data.members[1]
+        && coupleId == request.resource.data.members[0] + '_' + request.resource.data.members[1]
+        // both users must be paired with each other once this write lands
+        && getAfter(/databases/$(database)/documents/users/$(request.resource.data.members[0])).data.partnerId
+            == request.resource.data.members[1]
+        && getAfter(/databases/$(database)/documents/users/$(request.resource.data.members[1])).data.partnerId
+            == request.resource.data.members[0];
+
+      allow update, delete: if false;
+
+      // ----------------------------------------------------------- quests
+      match /quests/{questId} {
+        allow read: if isMember(coupleId);
+        allow create: if isMember(coupleId)
+          && request.resource.data.createdBy == request.auth.uid;
+        allow update: if isMember(coupleId) && (
+          // creator edits content
+          (resource.data.createdBy == request.auth.uid
+            && request.resource.data.createdBy == resource.data.createdBy)
+          // either partner ticks / unticks
+          || changedOnly(['completions', 'status', 'completedBy', 'completedAt'])
+        );
+        allow delete: if isMember(coupleId)
+          && resource.data.createdBy == request.auth.uid;
+      }
+
+      // ---------------------------------------------------------- rewards
+      match /rewards/{rewardId} {
+        allow read: if isMember(coupleId);
+        allow create: if isMember(coupleId)
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.claimCount == 0;
+        allow update: if isMember(coupleId) && (
+          // creator edits content (claimCount is only moved by claims)
+          (resource.data.createdBy == request.auth.uid
+            && request.resource.data.createdBy == resource.data.createdBy
+            && request.resource.data.get('claimCount', 0) == resource.data.get('claimCount', 0))
+          // partner claims: +1, within the limit, with a matching claim doc
+          || (resource.data.createdBy != request.auth.uid
+            && changedOnly(['claimCount'])
+            && request.resource.data.claimCount == resource.data.get('claimCount', 0) + 1
+            && (resource.data.get('maxClaims', null) == null
+                || request.resource.data.claimCount <= resource.data.maxClaims))
+        );
+        allow delete: if isMember(coupleId)
+          && resource.data.createdBy == request.auth.uid;
+      }
+
+      // ----------------------------------------------------------- claims
+      match /claims/{claimId} {
+        allow read: if isMember(coupleId);
+        allow create: if isMember(coupleId)
+          && request.resource.data.claimedBy == request.auth.uid
+          && request.resource.data.rewardOwner != request.auth.uid
+          && request.resource.data.fulfilledAt == null
+          && get(/databases/$(database)/documents/couples/$(coupleId)/rewards/$(request.resource.data.rewardId)).data.createdBy
+              == request.resource.data.rewardOwner
+          && get(/databases/$(database)/documents/couples/$(coupleId)/rewards/$(request.resource.data.rewardId)).data.pointCost
+              == request.resource.data.pointCost
+          && getAfter(/databases/$(database)/documents/couples/$(coupleId)/rewards/$(request.resource.data.rewardId)).data.claimCount
+              == get(/databases/$(database)/documents/couples/$(coupleId)/rewards/$(request.resource.data.rewardId)).data.get('claimCount', 0) + 1;
+        // the partner who owes the reward marks it as given
+        allow update: if isMember(coupleId)
+          && resource.data.rewardOwner == request.auth.uid
+          && changedOnly(['fulfilledAt']);
+        allow delete: if false;
+      }
     }
   }
 }

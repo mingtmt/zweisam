@@ -8,49 +8,111 @@ import {
   type ReactNode,
 } from "react";
 import { onAuthStateChanged } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, onSnapshot } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
+import { coupleIdFor, ensureCouple } from "@/lib/couple";
 import type { User as FirebaseUser } from "firebase/auth";
 import type { User as FirestoreUser } from "@/lib/types";
 
 interface AuthContextValue {
   firebaseUser: FirebaseUser | null;
   userDoc: FirestoreUser | null;
+  partnerDoc: FirestoreUser | null;
+  /** Set only once the couple doc + coupleId are in place for both partners. */
+  coupleId: string | null;
   loading: boolean;
-  setUserDoc: React.Dispatch<React.SetStateAction<FirestoreUser | null>>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
-  const [userDoc, setUserDoc] = useState<FirestoreUser | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [userState, setUserState] = useState<{
+    uid: string;
+    doc: FirestoreUser | null;
+  } | null>(null);
+  const [partnerState, setPartnerState] = useState<{
+    uid: string;
+    doc: FirestoreUser | null;
+  } | null>(null);
+
+  useEffect(
+    () =>
+      onAuthStateChanged(auth, (user) => {
+        setFirebaseUser(user);
+        setAuthLoading(false);
+      }),
+    []
+  );
+
+  const uid = firebaseUser?.uid ?? null;
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
-      if (!user) {
-        setFirebaseUser(null);
-        setUserDoc(null);
-        setLoading(false);
-        return;
-      }
-      setFirebaseUser(user);
-      try {
-        const snap = await getDoc(doc(db, "users", user.uid));
-        setUserDoc(snap.exists() ? (snap.data() as FirestoreUser) : null);
-      } catch (e) {
+    if (!uid) return;
+    return onSnapshot(
+      doc(db, "users", uid),
+      (snap) =>
+        setUserState({
+          uid,
+          doc: snap.exists() ? ({ ...snap.data(), id: snap.id } as FirestoreUser) : null,
+        }),
+      (e) => {
         console.error("Failed to load user profile:", e);
-        setUserDoc(null);
-      } finally {
-        setLoading(false);
+        setUserState({ uid, doc: null });
       }
-    });
-    return () => unsub();
-  }, []);
+    );
+  }, [uid]);
+
+  const userDoc = uid && userState?.uid === uid ? userState.doc : null;
+  const partnerId = userDoc?.partnerId ?? null;
+
+  useEffect(() => {
+    if (!partnerId) return;
+    return onSnapshot(
+      doc(db, "users", partnerId),
+      (snap) =>
+        setPartnerState({
+          uid: partnerId,
+          doc: snap.exists() ? ({ ...snap.data(), id: snap.id } as FirestoreUser) : null,
+        }),
+      (e) => {
+        console.error("Failed to load partner profile:", e);
+        setPartnerState({ uid: partnerId, doc: null });
+      }
+    );
+  }, [partnerId]);
+
+  const partnerDoc =
+    partnerId && partnerState?.uid === partnerId ? partnerState.doc : null;
+
+  const expectedCoupleId = uid && partnerId ? coupleIdFor(uid, partnerId) : null;
+  const coupleReady =
+    expectedCoupleId !== null &&
+    userDoc?.coupleId === expectedCoupleId &&
+    partnerDoc?.partnerId === uid;
+
+  // Heal pairs created before couple docs existed.
+  useEffect(() => {
+    if (!uid || !partnerId || !partnerDoc || coupleReady) return;
+    if (partnerDoc.partnerId !== uid) return;
+    ensureCouple(db, uid, partnerId).catch((e) =>
+      console.error("Failed to set up couple:", e)
+    );
+  }, [uid, partnerId, partnerDoc, coupleReady]);
+
+  const loading = authLoading || (uid !== null && userState?.uid !== uid);
 
   return (
-    <AuthContext.Provider value={{ firebaseUser, userDoc, loading, setUserDoc }}>
+    <AuthContext.Provider
+      value={{
+        firebaseUser,
+        userDoc,
+        partnerDoc,
+        coupleId: coupleReady ? expectedCoupleId : null,
+        loading,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
